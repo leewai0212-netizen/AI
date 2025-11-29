@@ -290,7 +290,7 @@
                     <option value="<?php echo $key; ?>"><?php echo $info['name']; ?></option>
                 <?php endforeach; ?>
             </select>
-            <input type="number" name="max_devices" min="1" max="10" placeholder="多开" value="1">
+            <input type="number" name="max_devices" min="1" max="9999" placeholder="多开" value="1">
             <select name="group">
                 <?php foreach ($cardGroups as $groupId => $group): ?>
                     <option value="<?php echo $groupId; ?>"><?php echo $group['name']; ?></option>
