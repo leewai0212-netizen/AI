@@ -1075,6 +1075,16 @@ if (!isLoggedIn()) {
     exit;
 }
 
+if (isAgent() && !isset($_SESSION['agent_app_id'])) {
+    $accounts = readAccounts();
+    foreach ($accounts as $account) {
+        if (($account['id'] ?? '') === ($_SESSION['user_id'] ?? '')) {
+            $_SESSION['agent_app_id'] = $account['app_id'] ?? 'all';
+            break;
+        }
+    }
+}
+
 if (($config['backup']['auto_backup'] ?? false)) {
     if (!is_dir($backupsDir)) {
         mkdir($backupsDir, 0755, true);

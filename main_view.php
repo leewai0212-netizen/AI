@@ -48,11 +48,13 @@
             color: #fff;
             box-shadow: 0 12px 24px rgba(0,0,0,0.1);
         }
-        .stat-card.stat-total { background: linear-gradient(120deg,#ff7676,#ff3d3d); }
+        .stat-card.stat-total { background: linear-gradient(120deg,#ffd54f,#ffb300); color:#5d4037; }
         .stat-card.stat-unused { background: linear-gradient(120deg,#66bb6a,#43a047); }
         .stat-card.stat-used { background: linear-gradient(120deg,#42a5f5,#1e88e5); }
         .stat-card.stat-disabled { background: linear-gradient(120deg,#9e9e9e,#616161); }
         .stat-card h3 { margin: 0 0 8px; font-size: 14px; color: rgba(255,255,255,0.85); }
+        .stat-card.stat-total h3,
+        .stat-card.stat-total p { color: #5d4037; }
         .stat-card p { margin: 0; font-size: 26px; font-weight: 600; }
         form.inline-form { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
         form.inline-form input,
@@ -78,6 +80,10 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
+        th.col-kami { background: linear-gradient(120deg,#ffb74d,#fb8c00); }
+        th.col-type { background: linear-gradient(120deg,#ab47bc,#8e24aa); }
+        th.col-status { background: linear-gradient(120deg,#26c6da,#00acc1); }
+        th.col-expire { background: linear-gradient(120deg,#ef5350,#e53935); }
         tr:nth-child(even) td { background: #fafafa; }
         tr:hover td { background: #f0f4ff; }
         .bulk-actions {
@@ -334,10 +340,10 @@
                         <th style="width:40px;">
                             <input type="checkbox" id="selectAll">
                         </th>
-                        <th>卡密</th>
-                        <th>类型</th>
-                        <th>状态</th>
-                        <th>到期时间</th>
+                        <th class="col-kami">卡密</th>
+                        <th class="col-type">类型</th>
+                        <th class="col-status">状态</th>
+                        <th class="col-expire">到期时间</th>
                         <th>多开</th>
                         <th>在线/总</th>
                         <th>上次心跳</th>
