@@ -88,6 +88,7 @@
         th.col-online { background: linear-gradient(120deg,#26a69a,#00897b); }
         th.col-heartbeat { background: linear-gradient(120deg,#ec407a,#d81b60); }
         th.col-app { background: linear-gradient(120deg,#7e57c2,#5e35b1); }
+        th.col-used { background: linear-gradient(120deg,#ffcc80,#ffa726); }
         th.col-owner { background: linear-gradient(120deg,#64b5f6,#1e88e5); }
         th.col-group { background: linear-gradient(120deg,#80cbc4,#26a69a); }
         th.col-notes { background: linear-gradient(120deg,#cfd8dc,#90a4ae); }
@@ -357,6 +358,7 @@
                         <th class="col-online">在线/总</th>
                         <th class="col-heartbeat">上次心跳</th>
                         <th class="col-app">应用</th>
+                        <th class="col-used">首次使用</th>
                         <th class="col-owner">生成者</th>
                         <th class="col-group">分组</th>
                         <th class="col-notes">备注</th>
@@ -423,6 +425,7 @@
                         <td><?php echo $online . '/' . count($deviceList); ?></td>
                         <td><?php echo htmlspecialchars($lastHeartbeat); ?></td>
                         <td><span class="tag tag-app"><?php echo $appName; ?></span></td>
+                        <td><?php echo htmlspecialchars($card['used_at'] ?? '-'); ?></td>
                         <td><?php echo $ownerName; ?></td>
                         <td><span class="tag" style="background: <?php echo $groupColor; ?>20;color: <?php echo $groupColor; ?>;"><?php echo $cardGroups[$groupId]['name'] ?? $groupId; ?></span></td>
                         <td><?php echo htmlspecialchars($card['notes'] ?? '-'); ?></td>
