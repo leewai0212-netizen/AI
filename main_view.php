@@ -609,6 +609,26 @@
                 <p>一个设备只允许一次试用，会话结束后再次调用会返回 409。</p>
             </div>
             <div class="api-block">
+                <strong>POST ?api=card_app</strong>
+                <p>根据 <code>card_key</code> 查询该卡密所属应用、类型、状态、有效期等信息，可用于在接入前确认卡密是否绑定了正确的应用。</p>
+<pre>{
+  "card_key": "ABCD1234"
+}
+响应:
+{
+  "code": 200,
+  "data": {
+    "card_key": "ABCD1234",
+    "type": "month",
+    "status": "used",
+    "app_id": "app_game01",
+    "app_name": "手游A",
+    "max_devices": 3,
+    "expire_time": "2025-05-01 10:00:00"
+  }
+}</pre>
+            </div>
+            <div class="api-block">
                 <strong>POST ?api=notifications</strong>
                 <p>获取当前登录用户的通知列表；<code>mark_notification_read</code> 用于标记已读。</p>
 <pre>// mark_notification_read 请求体

@@ -941,7 +941,36 @@ if (isset($_GET['api'])) {
                 'data' => [
                     'device_id' => $trialDevice,
                     'expires_at' => $trials[$trialDevice]['expires_at'],
-                    'seconds_left' => $trialDuration
+                    'seconds_left' => $trialDuration,
+                    'app_id' => $requestedApp,
+                    'app_name' => $applicationsById[$requestedApp]['name'] ?? $requestedApp
+                ]
+            ];
+            break;
+        case 'card_app':
+            $lookupKey = trim($payload['card_key'] ?? ($_GET['card_key'] ?? ''));
+            if ($lookupKey === '') {
+                $response = ['code' => 400, 'message' => 'card_key不能为空'];
+                break;
+            }
+            if (!isset($cardByKey[$lookupKey])) {
+                $response = ['code' => 404, 'message' => '卡密不存在'];
+                break;
+            }
+            $card = $cardByKey[$lookupKey];
+            $appId = $card['app_id'] ?? 'app_general';
+            $response = [
+                'code' => 200,
+                'message' => '查询成功',
+                'data' => [
+                    'card_key' => $card['card_key'],
+                    'type' => $card['type'],
+                    'status' => $card['status'],
+                    'app_id' => $appId,
+                    'app_name' => $applicationsById[$appId]['name'] ?? $appId,
+                    'max_devices' => $card['max_devices'] ?? 1,
+                    'expire_time' => $card['expire_time'] ?? null,
+                    'agent_id' => $card['agent_id'] ?? null
                 ]
             ];
             break;
