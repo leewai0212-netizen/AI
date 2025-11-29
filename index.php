@@ -8,6 +8,7 @@ $logsFile = __DIR__ . '/system_logs.json';
 $notificationsFile = __DIR__ . '/notifications.json';
 $configFile = __DIR__ . '/system_config.json';
 $backupsDir = __DIR__ . '/backups/';
+$applicationsFile = __DIR__ . '/applications.json';
 $cardPointsFile = __DIR__ . '/card_points_config.json';
 $trialSessionsFile = __DIR__ . '/trial_sessions.json';
 
@@ -537,6 +538,38 @@ function writeAccounts(array $accounts): void {
     writeJsonFile($accountsFile, $accounts);
 }
 
+function readApplications(): array {
+    global $applicationsFile;
+    if (!file_exists($applicationsFile)) {
+        $default = [
+            [
+                'id' => 'app_general',
+                'name' => '通用',
+                'description' => '默认应用'
+            ]
+        ];
+        writeJsonFile($applicationsFile, $default);
+        return $default;
+    }
+    $apps = readJsonFile($applicationsFile, []);
+    if (empty($apps)) {
+        $apps = [
+            [
+                'id' => 'app_general',
+                'name' => '通用',
+                'description' => '默认应用'
+            ]
+        ];
+        writeJsonFile($applicationsFile, $apps);
+    }
+    return $apps;
+}
+
+function writeApplications(array $applications): void {
+    global $applicationsFile;
+    writeJsonFile($applicationsFile, array_values($applications));
+}
+
 function readTrialSessions(): array {
     global $trialSessionsFile;
     return readJsonFile($trialSessionsFile, []);
@@ -562,14 +595,19 @@ function generateCardKey(int $length = 8): string {
     return $key;
 }
 
-function filterCardsForAgent(array $cards, string $agentName, string $agentId): array {
-    return array_values(array_filter($cards, function ($card) use ($agentName, $agentId) {
+function filterCardsForAgent(array $cards, string $agentName, string $agentId, string $appScope = 'all'): array {
+    return array_values(array_filter($cards, function ($card) use ($agentName, $agentId, $appScope) {
         if (($card['created_by'] ?? '') === $agentId) {
-            return true;
+            $appMatch = $appScope === 'all' || ($card['app_id'] ?? 'app_general') === $appScope;
+            return $appMatch;
         }
         $notes = $card['notes'] ?? '';
-        return strpos($notes, '代理生成: ' . $agentName) !== false ||
+        $belongs = strpos($notes, '代理生成: ' . $agentName) !== false ||
             strpos($notes, '代理提卡: ' . $agentName) !== false;
+        if (!$belongs) {
+            return false;
+        }
+        return $appScope === 'all' || ($card['app_id'] ?? 'app_general') === $appScope;
     }));
 }
 
@@ -580,7 +618,8 @@ function cardVisibleToCurrentUser(array $card): bool {
     if (isAgent()) {
         $agentId = $_SESSION['user_id'] ?? '';
         $agentName = $_SESSION['username'] ?? '';
-        return filterCardsForAgent([$card], $agentName, $agentId) !== [];
+        $appScope = $_SESSION['agent_app_id'] ?? 'all';
+        return filterCardsForAgent([$card], $agentName, $agentId, $appScope) !== [];
     }
     return false;
 }
@@ -612,6 +651,43 @@ function getCardOwnerLabel(array $card, array $userLookup): string {
         return $card['notes'];
     }
     return '未知';
+}
+
+function changeAgentPoints(string $agentId, int $delta, ?string &$error = null): bool {
+    if ($agentId === '' || $agentId === 'admin') {
+        return true;
+    }
+    $accounts = readAccounts();
+    foreach ($accounts as &$account) {
+        if (($account['id'] ?? '') === $agentId && ($account['type'] ?? '') === 'agent') {
+            $current = $account['points'] ?? 0;
+            if ($delta < 0 && $current < abs($delta)) {
+                $error = '积分不足';
+                return false;
+            }
+            $account['points'] = $current + $delta;
+            writeAccounts($accounts);
+            return true;
+        }
+    }
+    $error = '代理不存在';
+    return false;
+}
+
+function calculatePointsDeltaForDays(array $card, int $days): int {
+    global $cardTypes;
+    $type = $card['type'] ?? '';
+    if (!isset($cardTypes[$type])) {
+        return 0;
+    }
+    $durationSeconds = $cardTypes[$type]['duration'] ?? 0;
+    $basePoints = $cardTypes[$type]['points'] ?? 0;
+    if ($durationSeconds <= 0 || $basePoints <= 0) {
+        return 0;
+    }
+    $pointsPerSecond = $basePoints / $durationSeconds;
+    $deltaSeconds = $days * 86400;
+    return (int) round($pointsPerSecond * $deltaSeconds);
 }
 
 initSystemConfig();
@@ -873,7 +949,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'cards') {
             $userLookup[$acc['id']] = $acc['username'];
         }
     }
-    $visibleCards = isAdmin() ? $data : filterCardsForAgent($data, $_SESSION['username'], $_SESSION['user_id']);
+    $visibleCards = isAdmin() ? $data : filterCardsForAgent($data, $_SESSION['username'], $_SESSION['user_id'], $_SESSION['agent_app_id'] ?? 'all');
     $idsParam = trim($_GET['ids'] ?? '');
     if ($idsParam !== '') {
         $idsFilter = array_flip(array_filter(array_map('trim', explode(',', $idsParam))));
@@ -892,15 +968,17 @@ if (isset($_GET['export']) && $_GET['export'] === 'cards') {
     header('Content-Disposition: attachment; filename="cards_' . date('Y-m-d_H-i-s') . '.csv"');
     $output = fopen('php://output', 'w');
     fwrite($output, "\xEF\xBB\xBF");
-    fputcsv($output, ['卡密', '类型', '状态', '设备数', '到期时间', '生成者', '备注']);
+    fputcsv($output, ['卡密', '类型', '状态', '设备数', '到期时间', '应用', '生成者', '备注']);
     foreach ($visibleCards as $card) {
         $owner = getCardOwnerLabel($card, $userLookup);
+        $appName = $applicationsById[$card['app_id'] ?? 'app_general']['name'] ?? '通用';
         fputcsv($output, [
             $card['card_key'],
             $cardTypes[$card['type']]['name'] ?? $card['type'],
             ($card['disabled'] ?? false) ? '已禁用' : ($card['status'] === 'unused' ? '未使用' : '已激活'),
             $card['max_devices'] ?? 1,
             $card['expire_time'] ?? '-',
+            $appName,
             $owner,
             $card['notes'] ?? '-'
         ]);
@@ -919,6 +997,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
             $_SESSION['user_type'] = 'admin';
             $_SESSION['username'] = 'admin';
             $_SESSION['user_id'] = 'admin';
+            $_SESSION['agent_app_id'] = 'all';
             addLog('admin_login', 'admin');
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
@@ -931,6 +1010,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
                 $_SESSION['user_type'] = 'agent';
                 $_SESSION['username'] = $username;
                 $_SESSION['user_id'] = $account['id'];
+                $_SESSION['agent_app_id'] = $account['app_id'] ?? 'all';
                 addLog('agent_login', $account['id']);
                 header('Location: ' . $_SERVER['PHP_SELF']);
                 exit;
@@ -969,18 +1049,20 @@ if (($config['backup']['auto_backup'] ?? false)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login') {
     $action = $_POST['action'] ?? '';
 
-    if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config'], true)) {
+if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app'], true)) {
         if (!isAdmin()) {
             $_SESSION['error'] = '权限不足';
             header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
             exit;
         }
         $accounts = readAccounts();
+        $redirectTab = 'agents';
         switch ($action) {
             case 'add_agent':
                 $username = trim($_POST['username'] ?? '');
                 $password = trim($_POST['password'] ?? '');
                 $points = max(0, (int) ($_POST['points'] ?? 0));
+                $agentApp = $_POST['app_id'] ?? 'all';
                 if ($username === '' || $password === '') {
                     $_SESSION['error'] = '用户名和密码不能为空';
                     break;
@@ -998,6 +1080,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                     'password' => $password,
                     'type' => 'agent',
                     'points' => $points,
+                    'app_id' => $agentApp,
                     'created_at' => date('Y-m-d H:i:s')
                 ];
                 writeAccounts($accounts);
@@ -1007,6 +1090,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                 $agentId = $_POST['agent_id'] ?? '';
                 $newPoints = isset($_POST['points']) ? max(0, (int) $_POST['points']) : null;
                 $newPassword = trim($_POST['password'] ?? '');
+                $newAppId = $_POST['app_id'] ?? null;
                 $updated = false;
                 foreach ($accounts as &$account) {
                     if ($account['id'] === $agentId && $account['type'] === 'agent') {
@@ -1016,6 +1100,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                         }
                         if ($newPassword !== '') {
                             $account['password'] = $newPassword;
+                            $updated = true;
+                        }
+                        if ($newAppId !== null && $newAppId !== '') {
+                            $account['app_id'] = $newAppId;
                             $updated = true;
                         }
                         break;
@@ -1051,8 +1139,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                 writeJsonFile($cardPointsFile, $newConfig);
                 $_SESSION['message'] = '积分配置已更新';
                 break;
+            case 'add_app':
+                $redirectTab = 'apps';
+                $apps = readApplications();
+                $name = trim($_POST['app_name'] ?? '');
+                $description = trim($_POST['app_description'] ?? '');
+                $appId = trim($_POST['app_id'] ?? '');
+                if ($name === '') {
+                    $_SESSION['error'] = '应用名称不能为空';
+                    break;
+                }
+                if ($appId === '') {
+                    $appId = 'app_' . substr(bin2hex(random_bytes(6)), 0, 6);
+                }
+                foreach ($apps as $app) {
+                    if (($app['id'] ?? '') === $appId) {
+                        $_SESSION['error'] = '应用ID已存在';
+                        $appId = '';
+                        break 2;
+                    }
+                }
+                $apps[] = [
+                    'id' => $appId,
+                    'name' => $name,
+                    'description' => $description
+                ];
+                writeApplications($apps);
+                $_SESSION['message'] = '应用已创建';
+                break;
+            case 'delete_app':
+                $redirectTab = 'apps';
+                $appId = $_POST['app_id'] ?? '';
+                if ($appId === '' || $appId === 'app_general') {
+                    $_SESSION['error'] = '无法删除该应用';
+                    break;
+                }
+                $apps = readApplications();
+                $remaining = array_values(array_filter($apps, fn($app) => ($app['id'] ?? '') !== $appId));
+                if (count($remaining) === count($apps)) {
+                    $_SESSION['error'] = '应用不存在';
+                    break;
+                }
+                $data = readData();
+                foreach ($data as $card) {
+                    if (($card['app_id'] ?? 'app_general') === $appId) {
+                        $_SESSION['error'] = '应用仍有关联卡密，无法删除';
+                        $appId = '';
+                        break 2;
+                    }
+                }
+                writeApplications($remaining);
+                foreach ($accounts as &$account) {
+                    if (($account['app_id'] ?? '') === $appId) {
+                        $account['app_id'] = 'all';
+                    }
+                }
+                writeAccounts($accounts);
+                $_SESSION['message'] = '应用已删除';
+                break;
         }
-        header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=' . $redirectTab);
         exit;
     }
 
@@ -1083,6 +1229,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
             $isAgentUser = isAgent();
             if ($notes === '') {
                 $notes = $isAgentUser ? '代理生成: ' . ($_SESSION['username'] ?? '代理') : '管理员生成';
+            }
+            $selectedApp = $_POST['app_id'] ?? 'app_general';
+            if (!isset($applicationsById[$selectedApp])) {
+                $selectedApp = 'app_general';
+            }
+            if ($isAgentUser && $agentAppScope !== 'all') {
+                $selectedApp = $agentAppScope;
             }
             $typeCatalog = getCardTypesWithDynamicPoints();
             $typeInfo = $typeCatalog[$type] ?? ['name' => $type, 'points' => 0];
@@ -1130,7 +1283,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                     'used_by' => null,
                     'notes' => $notes,
                     'group' => $group,
-                    'created_by' => $_SESSION['user_id']
+                    'created_by' => $_SESSION['user_id'],
+                    'app_id' => $selectedApp,
+                    'points_spent' => $isAgentUser ? $costPerCard : 0
                 ];
                 $created++;
             }
@@ -1265,6 +1420,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
 $allCards = readData();
 $devices = readDevices();
 $accounts = readAccounts();
+$applications = readApplications();
+$applicationsById = [];
+foreach ($applications as $app) {
+    if (!isset($app['id'])) {
+        continue;
+    }
+    $applicationsById[$app['id']] = $app;
+}
+if (!isset($applicationsById['app_general'])) {
+    $applicationsById['app_general'] = ['id' => 'app_general', 'name' => '通用', 'description' => '默认应用'];
+    $applications[] = $applicationsById['app_general'];
+}
 $userLookup = ['admin' => '管理员'];
 $currentAgentPoints = null;
 foreach ($accounts as $account) {
@@ -1276,9 +1443,10 @@ foreach ($accounts as $account) {
     }
 }
 $agentAccounts = array_values(array_filter($accounts, fn($acc) => ($acc['type'] ?? '') === 'agent'));
+$agentAppScope = $_SESSION['agent_app_id'] ?? 'all';
 
 if (isAgent()) {
-    $allCards = filterCardsForAgent($allCards, $_SESSION['username'], $_SESSION['user_id']);
+    $allCards = filterCardsForAgent($allCards, $_SESSION['username'], $_SESSION['user_id'], $agentAppScope);
 }
 
 $cardGroups = $config['card_groups'] ?? ['normal' => ['name' => '默认分组', 'color' => '#4CAF50']];
@@ -1310,5 +1478,52 @@ $visibleCards = array_slice($filteredCards, $offset, $perPage);
 
 $systemStatus = getSystemStatus();
 $dynamicCardTypes = getCardTypesWithDynamicPoints();
+
+$appStats = [];
+foreach ($applicationsById as $appId => $app) {
+    $appStats[$appId] = [
+        'id' => $appId,
+        'name' => $app['name'] ?? $appId,
+        'cards' => 0,
+        'online' => 0
+    ];
+}
+$now = time();
+foreach ($allCards as $card) {
+    $appId = $card['app_id'] ?? 'app_general';
+    if (!isset($appStats[$appId])) {
+        $appStats[$appId] = [
+            'id' => $appId,
+            'name' => $appId,
+            'cards' => 0,
+            'online' => 0
+        ];
+    }
+    $appStats[$appId]['cards']++;
+    $cardDevices = $devices[$card['card_key']] ?? [];
+    foreach ($cardDevices as $device) {
+        $status = $device['status'] ?? 'online';
+        if ($status === 'kicked') {
+            continue;
+        }
+        $lastHeartbeat = $device['last_heartbeat'] ?? $device['login_time'] ?? null;
+        $lastTs = $lastHeartbeat ? strtotime($lastHeartbeat) : 0;
+        if ($lastTs && ($now - $lastTs) <= 300) {
+            $appStats[$appId]['online']++;
+        }
+    }
+}
+$appStatsDisplay = $appStats;
+if (isAgent() && $agentAppScope !== 'all') {
+    $appStatsDisplay = array_filter($appStats, fn($stat) => $stat['id'] === $agentAppScope);
+}
+
+$availableApps = $applications;
+if (isAgent() && $agentAppScope !== 'all') {
+    $availableApps = array_values(array_filter($applications, fn($app) => ($app['id'] ?? '') === $agentAppScope));
+}
+if (empty($availableApps)) {
+    $availableApps = [ $applicationsById['app_general'] ];
+}
 
 include __DIR__ . '/main_view.php';

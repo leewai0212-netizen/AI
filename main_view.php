@@ -183,6 +183,7 @@
     <div class="tabs">
         <div class="tab active" data-tab="manage">卡密管理</div>
         <?php if (isAdmin()): ?>
+            <div class="tab" data-tab="apps">应用管理</div>
             <div class="tab" data-tab="agents">代理管理</div>
             <div class="tab" data-tab="api">API 文档</div>
         <?php endif; ?>
@@ -242,6 +243,16 @@
             </div>
         </div>
         <?php endif; ?>
+        <?php if (!empty($appStatsDisplay)): ?>
+        <div class="type-stats">
+            <?php foreach ($appStatsDisplay as $stat): ?>
+                <div class="type-stat-card" style="background:#fff; border:1px solid #eee;">
+                    <div class="type-stat-number"><?php echo $stat['online']; ?> / <?php echo $stat['cards']; ?></div>
+                    <div class="type-stat-label"><?php echo htmlspecialchars($stat['name']); ?> 在线/总</div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
         <form class="inline-form" method="POST">
             <input type="hidden" name="action" value="generate_cards">
             <input type="number" name="count" min="1" max="200" placeholder="数量" value="1">
@@ -257,6 +268,17 @@
                     <option value="<?php echo $groupId; ?>"><?php echo $group['name']; ?></option>
                 <?php endforeach; ?>
             </select>
+            <?php if (isAdmin() || ($agentAppScope ?? 'all') === 'all'): ?>
+                <select name="app_id">
+                    <?php foreach ($availableApps as $app): ?>
+                        <option value="<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($app['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            <?php else: ?>
+                <?php $lockedApp = $availableApps[0] ?? ['id' => 'app_general', 'name' => '通用']; ?>
+                <input type="hidden" name="app_id" value="<?php echo htmlspecialchars($lockedApp['id'], ENT_QUOTES); ?>">
+                <div style="font-size:13px;color:#555;">应用：<?php echo htmlspecialchars($lockedApp['name']); ?></div>
+            <?php endif; ?>
             <input type="text" name="notes" placeholder="备注 (可空)">
             <button type="submit">⚡ 生成卡密</button>
             <a href="?export=cards" style="padding:10px 14px;border-radius:8px;background:#fff;border:1px solid #dcdcdc;text-decoration:none;color:#333;">📥 导出</a>
@@ -304,6 +326,7 @@
                         <th>多开</th>
                         <th>在线/总</th>
                         <th>上次心跳</th>
+                        <th>应用</th>
                         <th>生成者</th>
                         <th>分组</th>
                         <th>备注</th>
@@ -312,7 +335,7 @@
                 </thead>
                 <tbody>
                 <?php if (empty($visibleCards)): ?>
-                    <tr><td colspan="11" style="text-align:center;padding:40px;">暂无数据</td></tr>
+                    <tr><td colspan="12" style="text-align:center;padding:40px;">暂无数据</td></tr>
                 <?php else: ?>
                     <?php foreach ($visibleCards as $card):
                         $statusClass = $card['disabled'] ?? false ? 'status-disabled' : ($card['status'] === 'unused' ? 'status-unused' : 'status-used');
@@ -338,6 +361,7 @@
                         $typeMeta = $cardTypes[$card['type']] ?? ['name' => $card['type'], 'color' => '#999'];
                         $cardIdEsc = htmlspecialchars($card['id'], ENT_QUOTES);
                         $ownerName = htmlspecialchars(getCardOwnerLabel($card, $userLookup), ENT_QUOTES);
+                        $appName = htmlspecialchars(($applicationsById[$card['app_id'] ?? 'app_general']['name'] ?? '通用'));
                     ?>
                     <tr>
                         <td><input type="checkbox" class="row-check" value="<?php echo $cardIdEsc; ?>"></td>
@@ -348,6 +372,7 @@
                         <td><?php echo $card['max_devices'] ?? 1; ?></td>
                         <td><?php echo $online . '/' . count($deviceList); ?></td>
                         <td><?php echo htmlspecialchars($lastHeartbeat); ?></td>
+                        <td><?php echo $appName; ?></td>
                         <td><?php echo $ownerName; ?></td>
                         <td><span class="tag" style="background: <?php echo $groupColor; ?>20;color: <?php echo $groupColor; ?>;"><?php echo $cardGroups[$groupId]['name'] ?? $groupId; ?></span></td>
                         <td><?php echo htmlspecialchars($card['notes'] ?? '-'); ?></td>
@@ -361,6 +386,9 @@
                             <button onclick="promptMax('<?php echo $cardIdEsc; ?>','<?php echo $card['max_devices'] ?? 1; ?>')">多开</button>
                             <button onclick="promptNotes('<?php echo $cardIdEsc; ?>','<?php echo htmlspecialchars($card['notes'] ?? '', ENT_QUOTES); ?>')">备注</button>
                             <button onclick="promptDays('<?php echo $cardIdEsc; ?>')">调天数</button>
+                            <?php if (isAdmin()): ?>
+                                <button onclick="submitAction('recycle_card','<?php echo $cardIdEsc; ?>')">回收</button>
+                            <?php endif; ?>
                             <button class="danger" onclick="confirmDelete('<?php echo $cardIdEsc; ?>')">删除</button>
                         </td>
                     </tr>
@@ -382,6 +410,52 @@
         <?php endif; ?>
     </div>
     <?php if (isAdmin()): ?>
+    <div class="tab-content" id="apps">
+        <div class="api-doc">
+            <h2>应用管理</h2>
+            <form class="inline-form" method="POST" style="flex-direction:column; align-items:flex-start; gap:12px;">
+                <input type="hidden" name="action" value="add_app">
+                <div style="display:flex;flex-wrap:wrap;gap:12px;width:100%;">
+                    <input type="text" name="app_name" placeholder="应用名称" required>
+                    <input type="text" name="app_id" placeholder="应用ID（可留空自动生成）">
+                    <input type="text" name="app_description" placeholder="备注">
+                </div>
+                <button type="submit">➕ 新增应用</button>
+            </form>
+            <div style="overflow-x:auto;margin-top:20px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>名称</th>
+                            <th>ID</th>
+                            <th>备注</th>
+                            <th>在线/总卡密</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($applications as $app):
+                            $stat = $appStats[$app['id']] ?? ['online' => 0, 'cards' => 0];
+                        ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($app['name']); ?></td>
+                            <td><?php echo htmlspecialchars($app['id']); ?></td>
+                            <td><?php echo htmlspecialchars($app['description'] ?? '-'); ?></td>
+                            <td><?php echo ($stat['online'] ?? 0) . ' / ' . ($stat['cards'] ?? 0); ?></td>
+                            <td class="actions">
+                                <?php if (($app['id'] ?? '') !== 'app_general'): ?>
+                                    <button class="danger" onclick="deleteApp('<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>')">删除</button>
+                                <?php else: ?>
+                                    <span style="font-size:12px;color:#999;">默认</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
     <div class="tab-content" id="agents">
         <div class="api-doc">
             <h2>代理管理</h2>
@@ -405,6 +479,12 @@
                 <input type="text" name="username" placeholder="用户名" required>
                 <input type="password" name="password" placeholder="密码" required>
                 <input type="number" name="points" min="0" placeholder="初始积分" value="0">
+                <select name="app_id">
+                    <option value="all">通用（全部应用）</option>
+                    <?php foreach ($applications as $app): ?>
+                        <option value="<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($app['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
                 <button type="submit">➕ 添加代理</button>
             </form>
             <div style="overflow-x:auto;">
@@ -413,23 +493,29 @@
                         <tr>
                             <th>用户名</th>
                             <th>积分</th>
+                            <th>应用</th>
                             <th>创建时间</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($agentAccounts)): ?>
-                            <tr><td colspan="4" style="text-align:center;padding:30px;">暂无代理账户</td></tr>
+                            <tr><td colspan="5" style="text-align:center;padding:30px;">暂无代理账户</td></tr>
                         <?php else: ?>
                             <?php foreach ($agentAccounts as $agent):
                                 $agentIdEsc = htmlspecialchars($agent['id'], ENT_QUOTES);
+                                $agentAppId = $agent['app_id'] ?? 'all';
+                                $agentAppName = $agentAppId === 'all'
+                                    ? '通用'
+                                    : ($applicationsById[$agentAppId]['name'] ?? $agentAppId);
                             ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($agent['username']); ?></td>
                                 <td><?php echo (int) ($agent['points'] ?? 0); ?></td>
+                                <td><?php echo htmlspecialchars($agentAppName); ?></td>
                                 <td><?php echo $agent['created_at'] ?? '-'; ?></td>
                                 <td class="actions">
-                                    <button onclick="editAgent('<?php echo $agentIdEsc; ?>','<?php echo htmlspecialchars($agent['username'], ENT_QUOTES); ?>','<?php echo (int) ($agent['points'] ?? 0); ?>')">编辑</button>
+                                    <button onclick="editAgent('<?php echo $agentIdEsc; ?>','<?php echo htmlspecialchars($agent['username'], ENT_QUOTES); ?>','<?php echo (int) ($agent['points'] ?? 0); ?>','<?php echo htmlspecialchars($agentAppId, ENT_QUOTES); ?>')">编辑</button>
                                     <button class="danger" onclick="deleteAgent('<?php echo $agentIdEsc; ?>')">删除</button>
                                 </td>
                             </tr>
@@ -503,14 +589,25 @@
     <input type="hidden" name="format" value="csv">
     <input type="hidden" name="ids" value="">
 </form>
+<form id="appForm" method="POST" style="display:none;">
+    <input type="hidden" name="action" value="">
+    <input type="hidden" name="app_id" value="">
+    <input type="hidden" name="app_name" value="">
+    <input type="hidden" name="app_description" value="">
+</form>
 <form id="agentForm" method="POST" style="display:none;">
     <input type="hidden" name="action" value="">
     <input type="hidden" name="agent_id" value="">
     <input type="hidden" name="username" value="">
     <input type="hidden" name="password" value="">
     <input type="hidden" name="points" value="">
+    <input type="hidden" name="app_id" value="">
 </form>
 <script>
+    const appOptions = [...<?php echo json_encode(array_map(function ($app) {
+        return ['id' => $app['id'], 'name' => $app['name']];
+    }, $applications), JSON_UNESCAPED_UNICODE); ?>, {id: 'all', name: '通用(全部)'}];
+    const appOptionsList = appOptions.map(opt => `${opt.id}: ${opt.name}`).join('\n');
     const tabs = document.querySelectorAll('.tab');
     const contents = document.querySelectorAll('.tab-content');
     tabs.forEach(tab => {
@@ -640,9 +737,10 @@
         form.querySelector('input[name="username"]').value = payload.username || '';
         form.querySelector('input[name="password"]').value = payload.password || '';
         form.querySelector('input[name="points"]').value = Object.prototype.hasOwnProperty.call(payload, 'points') ? payload.points : '';
+        form.querySelector('input[name="app_id"]').value = payload.app_id || '';
         form.submit();
     }
-    function editAgent(id, username, points) {
+    function editAgent(id, username, points, appId) {
         const inputPoints = prompt('输入新的积分值', points);
         if (inputPoints === null) return;
         const normalized = String(inputPoints).trim();
@@ -651,16 +749,27 @@
             return;
         }
         const newPassword = prompt('输入新密码（可留空）', '');
+        const newApp = prompt('输入新的应用ID（all = 通用）\n' + appOptionsList, appId || 'all');
+        if (newApp === null) return;
         submitAgent('edit_agent', {
             agent_id: id,
             username,
             points: normalized,
-            password: newPassword ? newPassword.trim() : ''
+            password: newPassword ? newPassword.trim() : '',
+            app_id: newApp.trim()
         });
     }
     function deleteAgent(id) {
         if (!confirm('确定要删除该代理吗？')) return;
         submitAgent('delete_agent', { agent_id: id });
+    }
+    function deleteApp(appId) {
+        if (!confirm('确定要删除该应用吗？')) return;
+        const form = document.getElementById('appForm');
+        if (!form) return;
+        form.querySelector('input[name="action"]').value = 'delete_app';
+        form.querySelector('input[name="app_id"]').value = appId;
+        form.submit();
     }
 </script>
 </body>
