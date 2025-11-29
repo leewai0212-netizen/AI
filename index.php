@@ -597,12 +597,13 @@ function generateCardKey(int $length = 8): string {
 
 function filterCardsForAgent(array $cards, string $agentName, string $agentId, string $appScope = 'all'): array {
     return array_values(array_filter($cards, function ($card) use ($agentName, $agentId, $appScope) {
+        $cardApp = $card['app_id'] ?? 'app_general';
+        $matchesScope = $appScope === 'all' || $cardApp === $appScope || $cardApp === 'app_general';
         if (($card['agent_id'] ?? '') === $agentId) {
-            return true;
+            return $matchesScope;
         }
         if (($card['created_by'] ?? '') === $agentId) {
-            $appMatch = $appScope === 'all' || ($card['app_id'] ?? 'app_general') === $appScope;
-            return $appMatch;
+            return $matchesScope;
         }
         $notes = $card['notes'] ?? '';
         $belongs = strpos($notes, '代理生成: ' . $agentName) !== false ||
@@ -1603,8 +1604,16 @@ if (isAgent() && $agentAppScope !== 'all') {
 $availableApps = $applications;
 if (isAgent() && $agentAppScope !== 'all') {
     $availableApps = array_values(array_filter($applications, fn($app) => ($app['id'] ?? '') === $agentAppScope));
-}
-if (empty($availableApps)) {
+    if (empty($availableApps)) {
+        $placeholder = [
+            'id' => $agentAppScope,
+            'name' => $applicationsById[$agentAppScope]['name'] ?? $agentAppScope,
+            'description' => '代理专用应用'
+        ];
+        $availableApps = [$placeholder];
+        $applicationsById[$agentAppScope] = $placeholder;
+    }
+} elseif (empty($availableApps)) {
     $availableApps = [ $applicationsById['app_general'] ];
 }
 
