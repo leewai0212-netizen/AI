@@ -690,8 +690,30 @@ function calculatePointsDeltaForDays(array $card, int $days): int {
     return (int) round($pointsPerSecond * $deltaSeconds);
 }
 
+function cardMatchesApp(array $card, string $requestedApp): bool {
+    $cardApp = $card['app_id'] ?? 'app_general';
+    if ($cardApp === 'app_general') {
+        return true;
+    }
+    return $cardApp === $requestedApp;
+}
+
 initSystemConfig();
 initDatabase();
+
+$applications = readApplications();
+$applicationsById = [];
+foreach ($applications as $app) {
+    if (!isset($app['id'])) {
+        continue;
+    }
+    $applicationsById[$app['id']] = $app;
+}
+if (!isset($applicationsById['app_general'])) {
+    $applicationsById['app_general'] = ['id' => 'app_general', 'name' => '通用', 'description' => '默认应用'];
+    $applications[] = $applicationsById['app_general'];
+    writeApplications($applications);
+}
 
 $clientIP = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 if (!checkIPAccess($clientIP)) {
@@ -731,6 +753,11 @@ if (isset($_GET['api'])) {
 
     $response = ['code' => 400, 'message' => '未知接口'];
 
+    $requestedApp = $payload['app_id'] ?? ($_GET['app_id'] ?? 'app_general');
+    if (!isset($applicationsById[$requestedApp])) {
+        $requestedApp = 'app_general';
+    }
+
     $cardByKey = [];
     foreach ($data as $card) {
         $cardByKey[$card['card_key']] = $card;
@@ -750,6 +777,10 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$cardKey];
+             if (!cardMatchesApp($card, $requestedApp)) {
+                $response = ['code' => 410, 'message' => '应用不匹配，无法使用'];
+                break;
+            }
             if (($card['disabled'] ?? false)) {
                 $response = ['code' => 403, 'message' => '卡密已禁用'];
                 break;
@@ -781,6 +812,7 @@ if (isset($_GET['api'])) {
                     'card_type' => $card['type'],
                     'expire_time' => $card['expire_time'],
                     'max_devices' => $maxDevices,
+                    'app_id' => $card['app_id'] ?? 'app_general',
                     'online_count' => $result['online_count'],
                     'kicked_device' => $result['kicked_device']
                 ]
@@ -796,6 +828,10 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$cardKey];
+            if (!cardMatchesApp($card, $requestedApp)) {
+                $response = ['code' => 410, 'message' => '应用不匹配，无法使用'];
+                break;
+            }
             if ($card['status'] === 'unused' || ($card['disabled'] ?? false)) {
                 $response = ['code' => 403, 'message' => '卡密无效'];
                 break;
@@ -812,6 +848,7 @@ if (isset($_GET['api'])) {
                 'data' => [
                     'expire_time' => $card['expire_time'],
                     'online_count' => $result['online_count'],
+                    'app_id' => $card['app_id'] ?? 'app_general',
                     'kicked_device' => $result['kicked_device']
                 ]
             ];
@@ -1374,9 +1411,48 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
             $index = $findCard();
             if ($index !== null && cardVisibleToCurrentUser($cards[$index])) {
                 $days = (int) $extra;
+                $deltaPoints = calculatePointsDeltaForDays($cards[$index], $days);
+                if ($deltaPoints !== 0) {
+                    $creatorId = $cards[$index]['created_by'] ?? '';
+                    $pointError = null;
+                    if ($deltaPoints > 0) {
+                        if (!changeAgentPoints($creatorId, -$deltaPoints, $pointError)) {
+                            $_SESSION['error'] = $pointError ?? '积分不足，无法增加天数';
+                            break;
+                        }
+                    } else {
+                        changeAgentPoints($creatorId, abs($deltaPoints));
+                    }
+                    $cards[$index]['points_spent'] = max(0, ($cards[$index]['points_spent'] ?? 0) + $deltaPoints);
+                }
                 $cards[$index] = adjustCardExpireDays($cards[$index], $days, getCardTypesWithDynamicPoints());
                 $needsSave = true;
-                $_SESSION['message'] = "已调整 {$days} 天";
+                $_SESSION['message'] = "已调整 {$days} 天" . ($deltaPoints !== 0 ? "，积分变动 {$deltaPoints}" : '');
+            }
+            break;
+        case 'recycle_card':
+            if (!isAdmin()) {
+                $_SESSION['error'] = '仅管理员可回收卡密';
+                break;
+            }
+            $index = $findCard();
+            if ($index !== null && cardVisibleToCurrentUser($cards[$index])) {
+                $cardKey = $cards[$index]['card_key'];
+                $refund = (int) ($cards[$index]['points_spent'] ?? 0);
+                if ($refund > 0) {
+                    changeAgentPoints($cards[$index]['created_by'] ?? '', $refund);
+                }
+                $cards[$index]['points_spent'] = 0;
+                $cards[$index]['status'] = 'unused';
+                $cards[$index]['disabled'] = false;
+                $cards[$index]['used_at'] = null;
+                $cards[$index]['expire_time'] = null;
+                $cards[$index]['used_by'] = null;
+                unset($devices[$cardKey]);
+                writeDevices($devices);
+                $needsSave = true;
+                $_SESSION['message'] = '卡密已回收并返还积分';
+                addLog('recycle_card', $_SESSION['user_id'], ['card' => $cardKey, 'refund' => $refund]);
             }
             break;
         case 'batch_delete':
@@ -1420,18 +1496,6 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
 $allCards = readData();
 $devices = readDevices();
 $accounts = readAccounts();
-$applications = readApplications();
-$applicationsById = [];
-foreach ($applications as $app) {
-    if (!isset($app['id'])) {
-        continue;
-    }
-    $applicationsById[$app['id']] = $app;
-}
-if (!isset($applicationsById['app_general'])) {
-    $applicationsById['app_general'] = ['id' => 'app_general', 'name' => '通用', 'description' => '默认应用'];
-    $applications[] = $applicationsById['app_general'];
-}
 $userLookup = ['admin' => '管理员'];
 $currentAgentPoints = null;
 foreach ($accounts as $account) {

@@ -270,7 +270,9 @@
             </select>
             <?php if (isAdmin() || ($agentAppScope ?? 'all') === 'all'): ?>
                 <select name="app_id">
+                    <option value="app_general">通用（全部应用）</option>
                     <?php foreach ($availableApps as $app): ?>
+                        <?php if (($app['id'] ?? '') === 'app_general') { continue; } ?>
                         <option value="<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($app['name']); ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -361,7 +363,8 @@
                         $typeMeta = $cardTypes[$card['type']] ?? ['name' => $card['type'], 'color' => '#999'];
                         $cardIdEsc = htmlspecialchars($card['id'], ENT_QUOTES);
                         $ownerName = htmlspecialchars(getCardOwnerLabel($card, $userLookup), ENT_QUOTES);
-                        $appName = htmlspecialchars(($applicationsById[$card['app_id'] ?? 'app_general']['name'] ?? '通用'));
+                        $appRecord = $applicationsById[$card['app_id'] ?? 'app_general'] ?? null;
+                        $appName = htmlspecialchars($appRecord['name'] ?? ($card['app_id'] ?? '通用'));
                     ?>
                     <tr>
                         <td><input type="checkbox" class="row-check" value="<?php echo $cardIdEsc; ?>"></td>
@@ -480,9 +483,10 @@
                 <input type="password" name="password" placeholder="密码" required>
                 <input type="number" name="points" min="0" placeholder="初始积分" value="0">
                 <select name="app_id">
-                    <option value="all">通用（全部应用）</option>
-                    <?php foreach ($applications as $app): ?>
-                        <option value="<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($app['name']); ?></option>
+                    <option value="all">通用（可管理全部应用）</option>
+                    <?php foreach ($applicationsById as $appId => $app): ?>
+                        <?php if ($appId === 'app_general') continue; ?>
+                        <option value="<?php echo htmlspecialchars($appId, ENT_QUOTES); ?>"><?php echo htmlspecialchars($app['name'] ?? $appId); ?></option>
                     <?php endforeach; ?>
                 </select>
                 <button type="submit">➕ 添加代理</button>
@@ -531,16 +535,17 @@
             <h2>API 文档（全部内容可滚动查看）</h2>
             <div class="api-block">
                 <strong>POST ?api=verify</strong>
-                <p>验证并自动激活卡密，超出多开限制会踢掉最久未心跳设备。</p>
+                <p>验证并自动激活卡密，需传 <code>app_id</code>（卡所属应用，<code>app_general</code> 表示通用），超出多开限制会踢掉最久未心跳设备。</p>
 <pre>{
   "card_key": "ABCD1234",
   "device_id": "device_xxx",
-  "device_info": "Android_12"
+  "device_info": "Android_12",
+  "app_id": "app_myapp"
 }</pre>
             </div>
             <div class="api-block">
                 <strong>POST ?api=login</strong>
-                <p>验证已激活卡密并登录设备。</p>
+                <p>验证已激活卡密并登录设备，同样需要传 <code>app_id</code>。</p>
                 <strong>POST ?api=heartbeat</strong>
                 <p>心跳维持在线状态，若设备被踢会收到 407。</p>
                 <strong>POST ?api=logout</strong>
