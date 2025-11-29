@@ -69,6 +69,23 @@
         th, td { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 13px; }
         th { background: #fafbff; font-size: 12px; color: #666; }
         tr:hover td { background: #fafafa; }
+        .bulk-actions {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            background: #fff4e5;
+            border: 1px solid #ffd7a3;
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            color: #a86a00;
+        }
+        .bulk-actions.active { display: flex; }
+        .bulk-actions button {
+            background: linear-gradient(135deg, #ff8a65, #ff7043);
+            color: #fff;
+        }
         .points-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -248,16 +265,26 @@
             </select>
             <button type="submit">🔍 筛选</button>
         </form>
+        <div class="bulk-actions" id="bulkActions">
+            <span>已选择 <strong id="bulkCount">0</strong> 项</span>
+            <div>
+                <button type="button" onclick="batchDeleteSelected()">批量删除</button>
+            </div>
+        </div>
         <div style="overflow-x:auto;">
             <table>
                 <thead>
                     <tr>
+                        <th style="width:40px;">
+                            <input type="checkbox" id="selectAll">
+                        </th>
                         <th>卡密</th>
                         <th>类型</th>
                         <th>状态</th>
                         <th>到期时间</th>
                         <th>多开</th>
                         <th>在线/总</th>
+                        <th>上次心跳</th>
                         <th>分组</th>
                         <th>备注</th>
                         <th>操作</th>
@@ -265,16 +292,25 @@
                 </thead>
                 <tbody>
                 <?php if (empty($visibleCards)): ?>
-                    <tr><td colspan="9" style="text-align:center;padding:40px;">暂无数据</td></tr>
+                    <tr><td colspan="11" style="text-align:center;padding:40px;">暂无数据</td></tr>
                 <?php else: ?>
                     <?php foreach ($visibleCards as $card):
                         $statusClass = $card['disabled'] ?? false ? 'status-disabled' : ($card['status'] === 'unused' ? 'status-unused' : 'status-used');
                         $cardKey = $card['card_key'];
                         $deviceList = $devices[$cardKey] ?? [];
                         $online = 0;
+                        $lastHeartbeat = '-';
+                        $lastHeartbeatTs = 0;
                         foreach ($deviceList as $device) {
                             if (($device['status'] ?? 'online') !== 'kicked') {
                                 $online++;
+                            }
+                            if (!empty($device['last_heartbeat'])) {
+                                $ts = strtotime($device['last_heartbeat']);
+                                if ($ts && $ts > $lastHeartbeatTs) {
+                                    $lastHeartbeatTs = $ts;
+                                    $lastHeartbeat = $device['last_heartbeat'];
+                                }
                             }
                         }
                         $groupId = $card['group'] ?? 'normal';
@@ -283,12 +319,14 @@
                         $cardIdEsc = htmlspecialchars($card['id'], ENT_QUOTES);
                     ?>
                     <tr>
+                        <td><input type="checkbox" class="row-check" value="<?php echo $cardIdEsc; ?>"></td>
                         <td><span style="font-family:monospace;cursor:pointer;" onclick="copyKey('<?php echo htmlspecialchars($cardKey, ENT_QUOTES); ?>')"><?php echo htmlspecialchars($cardKey); ?></span></td>
                         <td><span class="tag" style="background: <?php echo $typeMeta['color']; ?>20;color: <?php echo $typeMeta['color']; ?>;"><?php echo $typeMeta['name']; ?></span></td>
                         <td><span class="tag <?php echo $statusClass; ?>"><?php echo $card['disabled'] ?? false ? '已禁用' : ($card['status'] === 'unused' ? '未使用' : '已激活'); ?></span></td>
                         <td><?php echo $card['expire_time'] ?? '-'; ?></td>
                         <td><?php echo $card['max_devices'] ?? 1; ?></td>
                         <td><?php echo $online . '/' . count($deviceList); ?></td>
+                        <td><?php echo htmlspecialchars($lastHeartbeat); ?></td>
                         <td><span class="tag" style="background: <?php echo $groupColor; ?>20;color: <?php echo $groupColor; ?>;"><?php echo $cardGroups[$groupId]['name'] ?? $groupId; ?></span></td>
                         <td><?php echo htmlspecialchars($card['notes'] ?? '-'); ?></td>
                         <td class="actions">
@@ -500,6 +538,52 @@
         params.set('page', page);
         window.location.search = params.toString();
     }
+    const rowCheckboxes = Array.from(document.querySelectorAll('.row-check'));
+    const bulkBar = document.getElementById('bulkActions');
+    const bulkCount = document.getElementById('bulkCount');
+    const selectAll = document.getElementById('selectAll');
+
+    function getSelectedIds() {
+        return rowCheckboxes.filter(cb => cb.checked).map(cb => cb.value);
+    }
+
+    function updateBulkBar() {
+        const ids = getSelectedIds();
+        if (ids.length > 0) {
+            if (bulkBar) bulkBar.classList.add('active');
+            if (bulkCount) {
+                bulkCount.textContent = ids.length;
+            }
+        } else {
+            if (bulkBar) bulkBar.classList.remove('active');
+            if (bulkCount) bulkCount.textContent = '0';
+            if (selectAll) selectAll.checked = false;
+        }
+    }
+
+    rowCheckboxes.forEach(cb => cb.addEventListener('change', updateBulkBar));
+
+    if (selectAll) {
+        selectAll.addEventListener('change', () => {
+            rowCheckboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateBulkBar();
+        });
+    }
+
+    function batchDeleteSelected() {
+        const ids = getSelectedIds();
+        if (!ids.length) {
+            alert('请先选择要删除的卡密');
+            return;
+        }
+        if (!confirm(`确定删除选中的 ${ids.length} 个卡密吗？`)) {
+            return;
+        }
+        submitAction('batch_delete', '', ids.join(','));
+    }
+
     function submitAgent(action, payload = {}) {
         const form = document.getElementById('agentForm');
         if (!form) return;

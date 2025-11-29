@@ -940,6 +940,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
             $maxDevices = max(1, min(10, (int) ($_POST['max_devices'] ?? 1)));
             $group = $_POST['group'] ?? 'normal';
             $notes = trim($_POST['notes'] ?? '');
+            $typeCatalog = getCardTypesWithDynamicPoints();
+            $typeInfo = $typeCatalog[$type] ?? ['name' => $type, 'points' => 0];
+            $costPerCard = (int) ($typeInfo['points'] ?? 0);
+
+            $agentAccounts = null;
+            $agentIndex = null;
+            if (isAgent()) {
+                if ($notes === '') {
+                    $notes = '代理生成: ' . ($_SESSION['username'] ?? '代理');
+                }
+                $agentAccounts = readAccounts();
+                foreach ($agentAccounts as $idx => $account) {
+                    if (($account['id'] ?? '') === ($_SESSION['user_id'] ?? '') && ($account['type'] ?? '') === 'agent') {
+                        $agentIndex = $idx;
+                        break;
+                    }
+                }
+                if ($agentIndex === null) {
+                    $_SESSION['error'] = '代理账户不存在';
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                }
+                $requiredPoints = $costPerCard * $count;
+                if (($agentAccounts[$agentIndex]['points'] ?? 0) < $requiredPoints) {
+                    $_SESSION['error'] = '积分不足，需要 ' . $requiredPoints . ' 积分，当前 ' . ($agentAccounts[$agentIndex]['points'] ?? 0);
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                }
+            }
+
             $created = 0;
             for ($i = 0; $i < $count; $i++) {
                 $key = generateCardKey($length);
@@ -964,8 +994,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                 $created++;
             }
             $needsSave = $created > 0;
-            $_SESSION['message'] = $created ? "成功生成 {$created} 个卡密" : '未生成新卡密';
-            addLog('generate_cards', $_SESSION['user_id'], ['count' => $created]);
+            $failed = max(0, $count - $created);
+            $logDetails = [
+                'type' => $type,
+                'requested' => $count,
+                'success' => $created,
+                'failed' => $failed
+            ];
+
+            if ($needsSave) {
+                if (isAgent()) {
+                    $actualCost = $costPerCard * $created;
+                    if ($actualCost > 0 && $agentIndex !== null) {
+                        $agentAccounts[$agentIndex]['points'] -= $actualCost;
+                        writeAccounts($agentAccounts);
+                        $_SESSION['message'] = "成功生成 {$created} 个{$typeInfo['name']}，消耗 {$actualCost} 积分";
+                        $logDetails['points_used'] = $actualCost;
+                    } else {
+                        $_SESSION['message'] = "成功生成 {$created} 个{$typeInfo['name']}。";
+                    }
+                } else {
+                    $_SESSION['message'] = "成功生成 {$created} 个{$typeInfo['name']}，失败 {$failed} 个";
+                }
+            } else {
+                $_SESSION['error'] = '未生成新卡密';
+            }
+
+            addLog('generate_cards', $_SESSION['user_id'], $logDetails);
             break;
         case 'delete_card':
             $index = $findCard();
@@ -1026,6 +1081,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                 $cards[$index] = adjustCardExpireDays($cards[$index], $days, getCardTypesWithDynamicPoints());
                 $needsSave = true;
                 $_SESSION['message'] = "已调整 {$days} 天";
+            }
+            break;
+        case 'batch_delete':
+            $ids = array_filter(array_map('trim', explode(',', $extra)));
+            if (empty($ids)) {
+                $_SESSION['error'] = '请选择要删除的卡密';
+                break;
+            }
+            $idsLookup = array_flip($ids);
+            $newCards = [];
+            $removed = 0;
+            foreach ($cards as $card) {
+                if (isset($idsLookup[$card['id']]) && cardVisibleToCurrentUser($card)) {
+                    $removed++;
+                    $cardKey = $card['card_key'];
+                    unset($devices[$cardKey]);
+                } else {
+                    $newCards[] = $card;
+                }
+            }
+            if ($removed > 0) {
+                $cards = array_values($newCards);
+                writeDevices($devices);
+                $needsSave = true;
+                $_SESSION['message'] = "已删除 {$removed} 个卡密";
+                addLog('batch_delete', $_SESSION['user_id'], ['count' => $removed]);
+            } else {
+                $_SESSION['error'] = '没有可删除的卡密或权限不足';
             }
             break;
     }
