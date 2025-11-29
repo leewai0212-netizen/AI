@@ -597,6 +597,10 @@ function generateCardKey(int $length = 8): string {
 
 function filterCardsForAgent(array $cards, string $agentName, string $agentId, string $appScope = 'all'): array {
     return array_values(array_filter($cards, function ($card) use ($agentName, $agentId, $appScope) {
+        if (($card['agent_id'] ?? '') === $agentId) {
+            $appMatch = $appScope === 'all' || ($card['app_id'] ?? 'app_general') === $appScope;
+            return $appMatch;
+        }
         if (($card['created_by'] ?? '') === $agentId) {
             $appMatch = $appScope === 'all' || ($card['app_id'] ?? 'app_general') === $appScope;
             return $appMatch;
@@ -1321,6 +1325,7 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                     'notes' => $notes,
                     'group' => $group,
                     'created_by' => $_SESSION['user_id'],
+                    'agent_id' => $isAgentUser ? $_SESSION['user_id'] : null,
                     'app_id' => $selectedApp,
                     'points_spent' => $isAgentUser ? $costPerCard : 0
                 ];

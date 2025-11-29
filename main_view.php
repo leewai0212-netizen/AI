@@ -43,12 +43,16 @@
         .tab-content.active { display: block; }
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .stat-card {
-            background: #fff;
             border-radius: 12px;
             padding: 16px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            color: #fff;
+            box-shadow: 0 12px 24px rgba(0,0,0,0.1);
         }
-        .stat-card h3 { margin: 0 0 8px; font-size: 14px; color: #888; }
+        .stat-card.stat-total { background: linear-gradient(120deg,#ff7676,#ff3d3d); }
+        .stat-card.stat-unused { background: linear-gradient(120deg,#66bb6a,#43a047); }
+        .stat-card.stat-used { background: linear-gradient(120deg,#42a5f5,#1e88e5); }
+        .stat-card.stat-disabled { background: linear-gradient(120deg,#9e9e9e,#616161); }
+        .stat-card h3 { margin: 0 0 8px; font-size: 14px; color: rgba(255,255,255,0.85); }
         .stat-card p { margin: 0; font-size: 26px; font-weight: 600; }
         form.inline-form { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
         form.inline-form input,
@@ -67,8 +71,15 @@
         }
         table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
         th, td { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 13px; }
-        th { background: #fafbff; font-size: 12px; color: #666; }
-        tr:hover td { background: #fafafa; }
+        th {
+            background: linear-gradient(120deg,#667eea,#764ba2);
+            color: #fff;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        tr:nth-child(even) td { background: #fafafa; }
+        tr:hover td { background: #f0f4ff; }
         .bulk-actions {
             display: none;
             align-items: center;
@@ -111,6 +122,7 @@
         .status-unused { background: #e8f7ee; color: #2e7d32; }
         .status-used { background: #e3f2fd; color: #1976d2; }
         .status-disabled { background: #fdecea; color: #c62828; }
+        .tag-app { background: #ede7f6; color: #5e35b1; }
         .actions button {
             border: none;
             background: #f0f1fa;
@@ -163,6 +175,7 @@
     </style>
 </head>
 <body>
+<?php $agentAppScope = $agentAppScope ?? 'all'; ?>
 <header>
     <div>
         <h1>阿伟定制自用卡密系统</h1>
@@ -190,19 +203,19 @@
     </div>
     <div class="tab-content active" id="manage">
         <div class="stats">
-            <div class="stat-card">
+            <div class="stat-card stat-total">
                 <h3>总卡密</h3>
                 <p><?php echo $totalCards; ?></p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-unused">
                 <h3>未使用</h3>
                 <p><?php echo $unusedCount; ?></p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-used">
                 <h3>已激活</h3>
                 <p><?php echo $usedCount; ?></p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-disabled">
                 <h3>已禁用</h3>
                 <p><?php echo $disabledCount; ?></p>
             </div>
@@ -375,7 +388,7 @@
                         <td><?php echo $card['max_devices'] ?? 1; ?></td>
                         <td><?php echo $online . '/' . count($deviceList); ?></td>
                         <td><?php echo htmlspecialchars($lastHeartbeat); ?></td>
-                        <td><?php echo $appName; ?></td>
+                        <td><span class="tag tag-app"><?php echo $appName; ?></span></td>
                         <td><?php echo $ownerName; ?></td>
                         <td><span class="tag" style="background: <?php echo $groupColor; ?>20;color: <?php echo $groupColor; ?>;"><?php echo $cardGroups[$groupId]['name'] ?? $groupId; ?></span></td>
                         <td><?php echo htmlspecialchars($card['notes'] ?? '-'); ?></td>
@@ -484,6 +497,7 @@
                 <input type="number" name="points" min="0" placeholder="初始积分" value="0">
                 <select name="app_id">
                     <option value="all">通用（可管理全部应用）</option>
+                    <option value="app_general">通用卡密</option>
                     <?php foreach ($applicationsById as $appId => $app): ?>
                         <?php if ($appId === 'app_general') continue; ?>
                         <option value="<?php echo htmlspecialchars($appId, ENT_QUOTES); ?>"><?php echo htmlspecialchars($app['name'] ?? $appId); ?></option>
