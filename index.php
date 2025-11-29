@@ -836,7 +836,21 @@ if (isset($_GET['api'])) {
                 $response = ['code' => 410, 'message' => '应用不匹配，无法使用'];
                 break;
             }
-            if ($card['status'] === 'unused' || ($card['disabled'] ?? false)) {
+            if ($card['status'] === 'unused') {
+                foreach ($data as &$item) {
+                    if ($item['card_key'] === $cardKey) {
+                        $item['status'] = 'used';
+                        $item['used_at'] = date('Y-m-d H:i:s');
+                        $duration = $cardTypes[$item['type']]['duration'] ?? 0;
+                        $item['expire_time'] = $duration > 0 ? date('Y-m-d H:i:s', time() + $duration) : null;
+                        $item['used_by'] = $payload['device_info'] ?? '';
+                        $card = $item;
+                        break;
+                    }
+                }
+                writeData($data);
+            }
+            if (($card['disabled'] ?? false)) {
                 $response = ['code' => 403, 'message' => '卡密无效'];
                 break;
             }
@@ -850,6 +864,7 @@ if (isset($_GET['api'])) {
                 'code' => 200,
                 'message' => $result['is_new_device'] ? '设备登录成功' : '设备重新登录成功',
                 'data' => [
+                    'card_type' => $card['type'],
                     'expire_time' => $card['expire_time'],
                     'online_count' => $result['online_count'],
                     'app_id' => $card['app_id'] ?? 'app_general',
