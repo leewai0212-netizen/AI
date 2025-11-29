@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>卡密管理系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+            background: #f5f6fb;
+            color: #333;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            padding: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { margin: 0; font-size: 24px; }
+        header .user-info { display: flex; gap: 12px; align-items: center; }
+        header a {
+            color: #fff;
+            text-decoration: none;
+            border: 1px solid rgba(255,255,255,0.6);
+            padding: 6px 16px;
+            border-radius: 999px;
+        }
+        .container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+        .tabs { display: flex; gap: 12px; border-bottom: 1px solid #e0e0e0; margin-bottom: 24px; }
+        .tab {
+            padding: 10px 18px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: 600;
+            color: #888;
+        }
+        .tab.active { border-color: #667eea; color: #333; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+        }
+        .stat-card h3 { margin: 0 0 8px; font-size: 14px; color: #888; }
+        .stat-card p { margin: 0; font-size: 26px; font-weight: 600; }
+        form.inline-form { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+        form.inline-form input,
+        form.inline-form select,
+        form.inline-form button {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid #dcdcdc;
+            font-size: 14px;
+        }
+        form.inline-form button {
+            background: #667eea;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+        }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+        th, td { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 13px; }
+        th { background: #fafbff; font-size: 12px; color: #666; }
+        tr:hover td { background: #fafafa; }
+        .tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-unused { background: #e8f7ee; color: #2e7d32; }
+        .status-used { background: #e3f2fd; color: #1976d2; }
+        .status-disabled { background: #fdecea; color: #c62828; }
+        .actions button {
+            border: none;
+            background: #f0f1fa;
+            color: #4a4a4a;
+            border-radius: 6px;
+            padding: 4px 10px;
+            margin: 2px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .actions button.danger { background: #fdecea; color: #c62828; }
+        .message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+        .api-doc {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+        }
+        .api-block { margin-bottom: 18px; }
+        .api-block pre {
+            background: #272822;
+            color: #f8f8f2;
+            padding: 14px;
+            border-radius: 10px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .pagination { display: flex; gap: 12px; justify-content: center; margin-top: 16px; }
+        .pagination button {
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            cursor: pointer;
+        }
+        .system-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 24px; }
+        .system-card { background: #fff; border-radius: 12px; padding: 16px; text-align: center; }
+        .system-card strong { display: block; font-size: 20px; margin-bottom: 6px; }
+        .badge { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
+        @media (max-width: 768px) {
+            .actions button { margin-bottom: 4px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div>
+        <h1>阿伟定制自用卡密系统</h1>
+        <div class="badge">版本 2.0.0</div>
+    </div>
+    <div class="user-info">
+        <span><?php echo isAdmin() ? '管理员' : '代理: ' . htmlspecialchars($_SESSION['username']); ?></span>
+        <a href="?action=logout">退出</a>
+    </div>
+</header>
+<div class="container">
+    <?php if (isset($_SESSION['message'])): ?>
+        <div class="message"><?php echo htmlspecialchars($_SESSION['message']); unset($_SESSION['message']); ?></div>
+    <?php endif; ?>
+    <?php if (isset($_SESSION['error'])): ?>
+        <div class="message" style="background:#fdecea;color:#c62828;"><?php echo htmlspecialchars($_SESSION['error']); unset($_SESSION['error']); ?></div>
+    <?php endif; ?>
+    <div class="tabs">
+        <div class="tab active" data-tab="manage">卡密管理</div>
+        <?php if (isAdmin()): ?>
+            <div class="tab" data-tab="api">API 文档</div>
+        <?php endif; ?>
+    </div>
+    <div class="tab-content active" id="manage">
+        <div class="stats">
+            <div class="stat-card">
+                <h3>总卡密</h3>
+                <p><?php echo $totalCards; ?></p>
+            </div>
+            <div class="stat-card">
+                <h3>未使用</h3>
+                <p><?php echo $unusedCount; ?></p>
+            </div>
+            <div class="stat-card">
+                <h3>已激活</h3>
+                <p><?php echo $usedCount; ?></p>
+            </div>
+            <div class="stat-card">
+                <h3>已禁用</h3>
+                <p><?php echo $disabledCount; ?></p>
+            </div>
+        </div>
+        <div class="system-row">
+            <div class="system-card">
+                <strong><?php echo $systemStatus['cpu_usage']; ?>%</strong>
+                <span>CPU 使用率</span>
+            </div>
+            <div class="system-card">
+                <strong><?php echo $systemStatus['memory_usage']; ?>MB</strong>
+                <span>内存占用</span>
+            </div>
+            <div class="system-card">
+                <strong><?php echo $systemStatus['active_connections']; ?></strong>
+                <span>在线设备</span>
+            </div>
+            <div class="system-card">
+                <strong><?php echo htmlspecialchars($systemStatus['uptime']); ?></strong>
+                <span>运行时间</span>
+            </div>
+        </div>
+        <form class="inline-form" method="POST">
+            <input type="hidden" name="action" value="generate_cards">
+            <input type="number" name="count" min="1" max="200" placeholder="数量" value="1">
+            <input type="number" name="length" min="6" max="32" placeholder="长度" value="12">
+            <select name="type">
+                <?php foreach ($dynamicCardTypes as $key => $info): ?>
+                    <option value="<?php echo $key; ?>"><?php echo $info['name']; ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input type="number" name="max_devices" min="1" max="10" placeholder="多开" value="1">
+            <select name="group">
+                <?php foreach ($cardGroups as $groupId => $group): ?>
+                    <option value="<?php echo $groupId; ?>"><?php echo $group['name']; ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input type="text" name="notes" placeholder="备注 (可空)">
+            <button type="submit">⚡ 生成卡密</button>
+            <a href="?export=cards" style="padding:10px 14px;border-radius:8px;background:#fff;border:1px solid #dcdcdc;text-decoration:none;color:#333;">📥 导出</a>
+        </form>
+        <form class="inline-form" method="GET">
+            <input type="text" name="search" placeholder="搜索卡密/备注" value="<?php echo htmlspecialchars($search); ?>">
+            <select name="status">
+                <option value="all" <?php echo $statusFilter === 'all' ? 'selected' : ''; ?>>全部状态</option>
+                <option value="unused" <?php echo $statusFilter === 'unused' ? 'selected' : ''; ?>>未使用</option>
+                <option value="used" <?php echo $statusFilter === 'used' ? 'selected' : ''; ?>>已激活</option>
+                <option value="disabled" <?php echo $statusFilter === 'disabled' ? 'selected' : ''; ?>>已禁用</option>
+            </select>
+            <select name="type">
+                <option value="all">全部类型</option>
+                <?php foreach ($cardTypes as $type => $info): ?>
+                    <option value="<?php echo $type; ?>" <?php echo $typeFilter === $type ? 'selected' : ''; ?>><?php echo $info['name']; ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="group">
+                <option value="all">全部分组</option>
+                <?php foreach ($cardGroups as $groupId => $group): ?>
+                    <option value="<?php echo $groupId; ?>" <?php echo $groupFilter === $groupId ? 'selected' : ''; ?>><?php echo $group['name']; ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit">🔍 筛选</button>
+        </form>
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>卡密</th>
+                        <th>类型</th>
+                        <th>状态</th>
+                        <th>到期时间</th>
+                        <th>多开</th>
+                        <th>在线/总</th>
+                        <th>分组</th>
+                        <th>备注</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php if (empty($visibleCards)): ?>
+                    <tr><td colspan="9" style="text-align:center;padding:40px;">暂无数据</td></tr>
+                <?php else: ?>
+                    <?php foreach ($visibleCards as $card):
+                        $statusClass = $card['disabled'] ?? false ? 'status-disabled' : ($card['status'] === 'unused' ? 'status-unused' : 'status-used');
+                        $cardKey = $card['card_key'];
+                        $deviceList = $devices[$cardKey] ?? [];
+                        $online = 0;
+                        foreach ($deviceList as $device) {
+                            if (($device['status'] ?? 'online') !== 'kicked') {
+                                $online++;
+                            }
+                        }
+                        $groupId = $card['group'] ?? 'normal';
+                        $groupColor = $cardGroups[$groupId]['color'] ?? '#999';
+                        $typeMeta = $cardTypes[$card['type']] ?? ['name' => $card['type'], 'color' => '#999'];
+                        $cardIdEsc = htmlspecialchars($card['id'], ENT_QUOTES);
+                    ?>
+                    <tr>
+                        <td><span style="font-family:monospace;cursor:pointer;" onclick="copyKey('<?php echo htmlspecialchars($cardKey, ENT_QUOTES); ?>')"><?php echo htmlspecialchars($cardKey); ?></span></td>
+                        <td><span class="tag" style="background: <?php echo $typeMeta['color']; ?>20;color: <?php echo $typeMeta['color']; ?>;"><?php echo $typeMeta['name']; ?></span></td>
+                        <td><span class="tag <?php echo $statusClass; ?>"><?php echo $card['disabled'] ?? false ? '已禁用' : ($card['status'] === 'unused' ? '未使用' : '已激活'); ?></span></td>
+                        <td><?php echo $card['expire_time'] ?? '-'; ?></td>
+                        <td><?php echo $card['max_devices'] ?? 1; ?></td>
+                        <td><?php echo $online . '/' . count($deviceList); ?></td>
+                        <td><span class="tag" style="background: <?php echo $groupColor; ?>20;color: <?php echo $groupColor; ?>;"><?php echo $cardGroups[$groupId]['name'] ?? $groupId; ?></span></td>
+                        <td><?php echo htmlspecialchars($card['notes'] ?? '-'); ?></td>
+                        <td class="actions">
+                            <?php if (!($card['disabled'] ?? false)): ?>
+                                <button onclick="submitAction('toggle_disable','<?php echo $cardIdEsc; ?>')">禁用</button>
+                            <?php else: ?>
+                                <button onclick="submitAction('toggle_disable','<?php echo $cardIdEsc; ?>')">启用</button>
+                            <?php endif; ?>
+                            <button onclick="submitAction('reset_card','<?php echo $cardIdEsc; ?>')">重置</button>
+                            <button onclick="promptMax('<?php echo $cardIdEsc; ?>','<?php echo $card['max_devices'] ?? 1; ?>')">多开</button>
+                            <button onclick="promptNotes('<?php echo $cardIdEsc; ?>','<?php echo htmlspecialchars($card['notes'] ?? '', ENT_QUOTES); ?>')">备注</button>
+                            <button onclick="promptDays('<?php echo $cardIdEsc; ?>')">调天数</button>
+                            <button class="danger" onclick="confirmDelete('<?php echo $cardIdEsc; ?>')">删除</button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php if ($totalPages > 1): ?>
+            <div class="pagination">
+                <?php if ($page > 1): ?>
+                    <button onclick="goPage(<?php echo $page - 1; ?>)">上一页</button>
+                <?php endif; ?>
+                <span>第 <?php echo $page; ?> / <?php echo $totalPages; ?> 页</span>
+                <?php if ($page < $totalPages): ?>
+                    <button onclick="goPage(<?php echo $page + 1; ?>)">下一页</button>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php if (isAdmin()): ?>
+    <div class="tab-content" id="api">
+        <div class="api-doc">
+            <h2>API 文档（全部内容可滚动查看）</h2>
+            <div class="api-block">
+                <strong>POST ?api=verify</strong>
+                <p>验证并自动激活卡密，超出多开限制会踢掉最久未心跳设备。</p>
+<pre>{
+  "card_key": "ABCD1234",
+  "device_id": "device_xxx",
+  "device_info": "Android_12"
+}</pre>
+            </div>
+            <div class="api-block">
+                <strong>POST ?api=login</strong>
+                <p>验证已激活卡密并登录设备。</p>
+                <strong>POST ?api=heartbeat</strong>
+                <p>心跳维持在线状态，若设备被踢会收到 407。</p>
+                <strong>POST ?api=logout</strong>
+                <p>设备退出。</p>
+            </div>
+            <div class="api-block">
+                <strong>错误码</strong>
+<pre>200 成功
+401 参数错误
+402 卡密不存在
+403 禁用或无效
+405 卡密过期
+406 未登录
+407 设备被踢</pre>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+<form id="actionForm" method="POST" style="display:none;">
+    <input type="hidden" name="action" value="">
+    <input type="hidden" name="card_id" value="">
+    <input type="hidden" name="extra" value="">
+</form>
+<script>
+    const tabs = document.querySelectorAll('.tab');
+    const contents = document.querySelectorAll('.tab-content');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            contents.forEach(c => c.classList.remove('active'));
+            tab.classList.add('active');
+            const target = document.getElementById(tab.dataset.tab);
+            if (target) target.classList.add('active');
+        });
+    });
+    function submitAction(action, id, extra = '') {
+        const form = document.getElementById('actionForm');
+        form.action.value = action;
+        form.card_id.value = id;
+        form.extra.value = extra;
+        form.submit();
+    }
+    function confirmDelete(id) {
+        if (confirm('确定删除该卡密吗？')) {
+            submitAction('delete_card', id);
+        }
+    }
+    function copyKey(key) {
+        navigator.clipboard.writeText(key).then(() => {
+            alert('卡密已复制: ' + key);
+        });
+    }
+    function promptNotes(id, current) {
+        const value = prompt('输入备注（留空则清空）', current);
+        if (value !== null) {
+            submitAction('add_notes', id, value);
+        }
+    }
+    function promptMax(id, current) {
+        const value = prompt('设置多开数量 (1-10)', current);
+        if (value !== null) {
+            submitAction('update_max_devices', id, value);
+        }
+    }
+    function promptDays(id) {
+        const value = prompt('输入要增减的天数，正数增加，负数减少', '1');
+        if (value !== null && value !== '') {
+            submitAction('adjust_days', id, value);
+        }
+    }
+    function goPage(page) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('page', page);
+        window.location.search = params.toString();
+    }
+</script>
+</body>
+</html>
