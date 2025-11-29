@@ -266,10 +266,14 @@ function getUptime(): string {
     $path = '/proc/uptime';
     if (file_exists($path)) {
         $parts = explode(' ', trim((string) file_get_contents($path)));
-        $seconds = (float) ($parts[0] ?? 0);
-        $days = floor($seconds / 86400);
-        $hours = floor(($seconds % 86400) / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
+        $secondsFloat = (float) ($parts[0] ?? 0);
+        $seconds = (int) floor($secondsFloat);
+        if ($seconds < 0) {
+            $seconds = 0;
+        }
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
         return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
     }
     return '未知';
@@ -825,7 +829,7 @@ if (($config['backup']['auto_backup'] ?? false)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login') {
     $action = $_POST['action'] ?? '';
 
-    if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent'], true)) {
+    if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config'], true)) {
         if (!isAdmin()) {
             $_SESSION['error'] = '权限不足';
             header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
@@ -896,6 +900,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
                 } else {
                     $_SESSION['error'] = '未找到该代理';
                 }
+                break;
+            case 'update_points_config':
+                $incoming = $_POST['points'] ?? [];
+                $newConfig = [];
+                foreach ($cardTypes as $type => $info) {
+                    $value = $incoming[$type] ?? ($info['points'] ?? 0);
+                    $newConfig[$type] = max(0, (int) $value);
+                }
+                writeJsonFile($cardPointsFile, $newConfig);
+                $_SESSION['message'] = '积分配置已更新';
                 break;
         }
         header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');

@@ -69,6 +69,21 @@
         th, td { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 13px; }
         th { background: #fafbff; font-size: 12px; color: #666; }
         tr:hover td { background: #fafafa; }
+        .points-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            width: 100%;
+        }
+        .points-grid label {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            color: #555;
+        }
+        .points-grid input {
+            margin-top: 6px;
+        }
         .tag {
             display: inline-block;
             padding: 4px 10px;
@@ -311,6 +326,20 @@
         <div class="api-doc">
             <h2>代理管理</h2>
             <p>创建、调整或删除代理账号，积分实时生效。</p>
+            <h3 style="margin-top:10px;">积分配置</h3>
+            <form class="inline-form" method="POST" style="flex-direction:column; align-items:flex-start; gap:12px;">
+                <input type="hidden" name="action" value="update_points_config">
+                <div class="points-grid">
+                    <?php foreach ($dynamicCardTypes as $type => $info): ?>
+                        <label>
+                            <?php echo $info['name']; ?>
+                            <input type="number" min="0" name="points[<?php echo $type; ?>]" value="<?php echo (int) ($info['points'] ?? 0); ?>">
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+                <button type="submit">💾 保存积分配置</button>
+            </form>
+            <hr style="margin:24px 0;">
             <form class="inline-form" method="POST">
                 <input type="hidden" name="action" value="add_agent">
                 <input type="text" name="username" placeholder="用户名" required>
