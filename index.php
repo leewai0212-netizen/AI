@@ -9,6 +9,7 @@ $notificationsFile = __DIR__ . '/notifications.json';
 $configFile = __DIR__ . '/system_config.json';
 $backupsDir = __DIR__ . '/backups/';
 $cardPointsFile = __DIR__ . '/card_points_config.json';
+$trialSessionsFile = __DIR__ . '/trial_sessions.json';
 
 const DEVICE_TIMEOUT_SECONDS = 18000; // 5 hours
 
@@ -53,6 +54,9 @@ function initSystemConfig(): void {
                 'normal' => ['name' => '默认分组', 'color' => '#4CAF50'],
                 'vip' => ['name' => 'VIP', 'color' => '#F39C12'],
                 'trial' => ['name' => '试用', 'color' => '#2196F3']
+            ],
+            'trial' => [
+                'duration_seconds' => 3600
             ]
         ];
         writeJsonFile($configFile, $default);
@@ -533,6 +537,21 @@ function writeAccounts(array $accounts): void {
     writeJsonFile($accountsFile, $accounts);
 }
 
+function readTrialSessions(): array {
+    global $trialSessionsFile;
+    return readJsonFile($trialSessionsFile, []);
+}
+
+function writeTrialSessions(array $sessions): void {
+    global $trialSessionsFile;
+    writeJsonFile($trialSessionsFile, $sessions);
+}
+
+function getTrialDurationSeconds(): int {
+    $config = getSystemConfig();
+    return max(60, (int) ($config['trial']['duration_seconds'] ?? 3600));
+}
+
 function generateCardKey(int $length = 8): string {
     $pool = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     $max = strlen($pool) - 1;
@@ -758,6 +777,55 @@ if (isset($_GET['api'])) {
                 writeDevices($devices);
             }
             $response = ['code' => 200, 'message' => '退出成功'];
+            break;
+        case 'trial':
+            $trialDevice = trim($payload['device_id'] ?? '');
+            $requestedDuration = (int) ($payload['duration'] ?? 0);
+            $trialDuration = $requestedDuration > 0 ? $requestedDuration : getTrialDurationSeconds();
+            $trialDuration = max(60, min(86400, $trialDuration));
+            if ($trialDevice === '') {
+                $response = ['code' => 401, 'message' => '设备ID不能为空'];
+                break;
+            }
+            $trials = readTrialSessions();
+            $existingTrial = $trials[$trialDevice] ?? null;
+            $now = time();
+            if ($existingTrial) {
+                if (($existingTrial['expires_at'] ?? 0) > $now) {
+                    $response = [
+                        'code' => 200,
+                        'message' => '试用进行中',
+                        'data' => [
+                            'device_id' => $trialDevice,
+                            'expires_at' => $existingTrial['expires_at'],
+                            'seconds_left' => max(0, $existingTrial['expires_at'] - $now)
+                        ]
+                    ];
+                } else {
+                    $response = [
+                        'code' => 409,
+                        'message' => '试用已结束，无法再次使用'
+                    ];
+                }
+                break;
+            }
+            $trials[$trialDevice] = [
+                'device_id' => $trialDevice,
+                'started_at' => date('Y-m-d H:i:s', $now),
+                'expires_at' => $now + $trialDuration,
+                'duration' => $trialDuration
+            ];
+            writeTrialSessions($trials);
+            addLog('trial_start', $_SESSION['user_id'] ?? 'anonymous', ['device_id' => $trialDevice, 'duration' => $trialDuration]);
+            $response = [
+                'code' => 200,
+                'message' => '试用启动成功',
+                'data' => [
+                    'device_id' => $trialDevice,
+                    'expires_at' => $trials[$trialDevice]['expires_at'],
+                    'seconds_left' => $trialDuration
+                ]
+            ];
             break;
         case 'notifications':
             $userId = $_SESSION['user_id'] ?? '';

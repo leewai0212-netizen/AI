@@ -222,6 +222,7 @@
                 </div>
             </div>
         <?php endif; ?>
+        <?php if (isAdmin()): ?>
         <div class="system-row">
             <div class="system-card">
                 <strong><?php echo $systemStatus['cpu_usage']; ?>%</strong>
@@ -240,6 +241,7 @@
                 <span>运行时间</span>
             </div>
         </div>
+        <?php endif; ?>
         <form class="inline-form" method="POST">
             <input type="hidden" name="action" value="generate_cards">
             <input type="number" name="count" min="1" max="200" placeholder="数量" value="1">
@@ -457,6 +459,15 @@
                 <p>心跳维持在线状态，若设备被踢会收到 407。</p>
                 <strong>POST ?api=logout</strong>
                 <p>设备退出。</p>
+            </div>
+            <div class="api-block">
+                <strong>POST ?api=trial</strong>
+                <p>创建或查询单设备试用会话（默认 <?php echo getTrialDurationSeconds(); ?> 秒，可传 <code>duration</code> 控制，最大 86400 秒）。</p>
+<pre>{
+  "device_id": "trial_device_001",
+  "duration": 1800
+}</pre>
+                <p>一个设备只允许一次试用，会话结束后再次调用会返回 409。</p>
             </div>
             <div class="api-block">
                 <strong>POST ?api=notifications</strong>
