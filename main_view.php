@@ -206,6 +206,22 @@
                 <p><?php echo $disabledCount; ?></p>
             </div>
         </div>
+        <?php if (isAgent()): ?>
+            <div class="message" style="background:#e3f2fd;color:#0d47a1;">
+                <div style="font-weight:600;">当前积分：<?php echo (int) ($currentAgentPoints ?? 0); ?></div>
+                <div style="margin-top:10px;">
+                    <strong>生成消耗：</strong>
+                </div>
+                <div class="points-grid" style="margin-top:6px;">
+                    <?php foreach ($dynamicCardTypes as $info): ?>
+                        <label style="font-size:13px;color:#333;">
+                            <?php echo $info['name']; ?>
+                            <span style="margin-top:4px;font-weight:bold;"><?php echo (int) ($info['points'] ?? 0); ?> 积分/张</span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endif; ?>
         <div class="system-row">
             <div class="system-card">
                 <strong><?php echo $systemStatus['cpu_usage']; ?>%</strong>
@@ -227,7 +243,7 @@
         <form class="inline-form" method="POST">
             <input type="hidden" name="action" value="generate_cards">
             <input type="number" name="count" min="1" max="200" placeholder="数量" value="1">
-            <input type="number" name="length" min="6" max="32" placeholder="长度" value="12">
+            <input type="number" name="length" min="6" max="32" placeholder="长度" value="8">
             <select name="type">
                 <?php foreach ($dynamicCardTypes as $key => $info): ?>
                     <option value="<?php echo $key; ?>"><?php echo $info['name']; ?></option>
@@ -269,6 +285,7 @@
             <span>已选择 <strong id="bulkCount">0</strong> 项</span>
             <div>
                 <button type="button" onclick="batchDeleteSelected()">批量删除</button>
+                <button type="button" style="margin-left:8px;" onclick="batchExportSelected()">批量导出</button>
             </div>
         </div>
         <div style="overflow-x:auto;">
@@ -285,6 +302,7 @@
                         <th>多开</th>
                         <th>在线/总</th>
                         <th>上次心跳</th>
+                        <th>生成者</th>
                         <th>分组</th>
                         <th>备注</th>
                         <th>操作</th>
@@ -317,6 +335,7 @@
                         $groupColor = $cardGroups[$groupId]['color'] ?? '#999';
                         $typeMeta = $cardTypes[$card['type']] ?? ['name' => $card['type'], 'color' => '#999'];
                         $cardIdEsc = htmlspecialchars($card['id'], ENT_QUOTES);
+                        $ownerName = htmlspecialchars(getCardOwnerLabel($card, $userLookup), ENT_QUOTES);
                     ?>
                     <tr>
                         <td><input type="checkbox" class="row-check" value="<?php echo $cardIdEsc; ?>"></td>
@@ -327,6 +346,7 @@
                         <td><?php echo $card['max_devices'] ?? 1; ?></td>
                         <td><?php echo $online . '/' . count($deviceList); ?></td>
                         <td><?php echo htmlspecialchars($lastHeartbeat); ?></td>
+                        <td><?php echo $ownerName; ?></td>
                         <td><span class="tag" style="background: <?php echo $groupColor; ?>20;color: <?php echo $groupColor; ?>;"><?php echo $cardGroups[$groupId]['name'] ?? $groupId; ?></span></td>
                         <td><?php echo htmlspecialchars($card['notes'] ?? '-'); ?></td>
                         <td class="actions">
@@ -467,6 +487,11 @@
     <input type="hidden" name="card_id" value="">
     <input type="hidden" name="extra" value="">
 </form>
+<form id="exportForm" method="GET" style="display:none;">
+    <input type="hidden" name="export" value="cards">
+    <input type="hidden" name="format" value="csv">
+    <input type="hidden" name="ids" value="">
+</form>
 <form id="agentForm" method="POST" style="display:none;">
     <input type="hidden" name="action" value="">
     <input type="hidden" name="agent_id" value="">
@@ -582,6 +607,18 @@
             return;
         }
         submitAction('batch_delete', '', ids.join(','));
+    }
+
+    function batchExportSelected() {
+        const ids = getSelectedIds();
+        if (!ids.length) {
+            alert('请先选择要导出的卡密');
+            return;
+        }
+        const form = document.getElementById('exportForm');
+        if (!form) return;
+        form.querySelector('input[name="ids"]').value = ids.join(',');
+        form.submit();
     }
 
     function submitAgent(action, payload = {}) {

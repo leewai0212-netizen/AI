@@ -10,6 +10,8 @@ $configFile = __DIR__ . '/system_config.json';
 $backupsDir = __DIR__ . '/backups/';
 $cardPointsFile = __DIR__ . '/card_points_config.json';
 
+const DEVICE_TIMEOUT_SECONDS = 18000; // 5 hours
+
 function readJsonFile(string $path, $default = []) {
     if (!file_exists($path)) {
         return $default;
@@ -479,9 +481,41 @@ function writeData(array $data): void {
     writeJsonFile($dataFile, $data);
 }
 
+function enforceDeviceTimeouts(array $devices, int $timeoutSeconds = DEVICE_TIMEOUT_SECONDS): array {
+    $changed = false;
+    $now = time();
+    foreach ($devices as $cardKey => &$cardDevices) {
+        if (!is_array($cardDevices)) {
+            continue;
+        }
+        foreach ($cardDevices as &$device) {
+            $status = $device['status'] ?? 'online';
+            $heartbeatSource = $device['last_heartbeat'] ?? ($device['login_time'] ?? null);
+            $lastHeartbeat = $heartbeatSource ? strtotime($heartbeatSource) : 0;
+            if ($status !== 'kicked') {
+                if (!$lastHeartbeat || ($now - $lastHeartbeat) >= $timeoutSeconds) {
+                    $device['status'] = 'kicked';
+                    $device['kicked_time'] = date('Y-m-d H:i:s', $now);
+                    $device['kicked_reason'] = '长时间无心跳';
+                    $changed = true;
+                }
+            }
+        }
+        unset($device);
+        $cardDevices = array_values($cardDevices);
+    }
+    unset($cardDevices);
+    return ['devices' => $devices, 'changed' => $changed];
+}
+
 function readDevices(): array {
     global $devicesFile;
-    return readJsonFile($devicesFile, []);
+    $devices = readJsonFile($devicesFile, []);
+    $result = enforceDeviceTimeouts($devices);
+    if ($result['changed']) {
+        writeJsonFile($devicesFile, $result['devices']);
+    }
+    return $result['devices'];
 }
 
 function writeDevices(array $devices): void {
@@ -499,7 +533,7 @@ function writeAccounts(array $accounts): void {
     writeJsonFile($accountsFile, $accounts);
 }
 
-function generateCardKey(int $length = 16): string {
+function generateCardKey(int $length = 8): string {
     $pool = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     $max = strlen($pool) - 1;
     $key = '';
@@ -548,6 +582,17 @@ function adjustCardExpireDays(array $card, int $days, array $cardTypes): array {
         $card['expire_time'] = date('Y-m-d H:i:s', $base + $seconds);
     }
     return $card;
+}
+
+function getCardOwnerLabel(array $card, array $userLookup): string {
+    $creatorId = $card['created_by'] ?? '';
+    if ($creatorId && isset($userLookup[$creatorId])) {
+        return $userLookup[$creatorId];
+    }
+    if (!empty($card['notes'])) {
+        return $card['notes'];
+    }
+    return '未知';
 }
 
 initSystemConfig();
@@ -747,22 +792,49 @@ if (isset($_GET['health'])) {
     exit;
 }
 
-if (isset($_GET['export']) && isLoggedIn()) {
+if (isset($_GET['export']) && $_GET['export'] === 'cards') {
+    if (!isLoggedIn()) {
+        http_response_code(401);
+        exit;
+    }
     $data = readData();
+    $accounts = readAccounts();
+    $userLookup = ['admin' => '管理员'];
+    foreach ($accounts as $acc) {
+        if (isset($acc['id'], $acc['username'])) {
+            $userLookup[$acc['id']] = $acc['username'];
+        }
+    }
     $visibleCards = isAdmin() ? $data : filterCardsForAgent($data, $_SESSION['username'], $_SESSION['user_id']);
+    $idsParam = trim($_GET['ids'] ?? '');
+    if ($idsParam !== '') {
+        $idsFilter = array_flip(array_filter(array_map('trim', explode(',', $idsParam))));
+        $visibleCards = array_values(array_filter($visibleCards, function ($card) use ($idsFilter) {
+            return isset($idsFilter[$card['id']]);
+        }));
+    }
+    $format = $_GET['format'] ?? 'csv';
+    if ($format === 'json') {
+        header('Content-Type: application/json');
+        header('Content-Disposition: attachment; filename="cards_' . date('Y-m-d_H-i-s') . '.json"');
+        echo json_encode($visibleCards, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        exit;
+    }
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="cards_' . date('Ymd_His') . '.csv"');
+    header('Content-Disposition: attachment; filename="cards_' . date('Y-m-d_H-i-s') . '.csv"');
     $output = fopen('php://output', 'w');
     fwrite($output, "\xEF\xBB\xBF");
-    fputcsv($output, ['卡密', '类型', '状态', '到期时间', '设备数', '备注']);
+    fputcsv($output, ['卡密', '类型', '状态', '设备数', '到期时间', '生成者', '备注']);
     foreach ($visibleCards as $card) {
+        $owner = getCardOwnerLabel($card, $userLookup);
         fputcsv($output, [
             $card['card_key'],
             $cardTypes[$card['type']]['name'] ?? $card['type'],
-            $card['disabled'] ?? false ? '已禁用' : ($card['status'] === 'unused' ? '未使用' : '已激活'),
-            $card['expire_time'] ?? '-',
+            ($card['disabled'] ?? false) ? '已禁用' : ($card['status'] === 'unused' ? '未使用' : '已激活'),
             $card['max_devices'] ?? 1,
-            $card['notes'] ?? ''
+            $card['expire_time'] ?? '-',
+            $owner,
+            $card['notes'] ?? '-'
         ]);
     }
     fclose($output);
@@ -940,16 +1012,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
             $maxDevices = max(1, min(10, (int) ($_POST['max_devices'] ?? 1)));
             $group = $_POST['group'] ?? 'normal';
             $notes = trim($_POST['notes'] ?? '');
+            $isAgentUser = isAgent();
+            if ($notes === '') {
+                $notes = $isAgentUser ? '代理生成: ' . ($_SESSION['username'] ?? '代理') : '管理员生成';
+            }
             $typeCatalog = getCardTypesWithDynamicPoints();
             $typeInfo = $typeCatalog[$type] ?? ['name' => $type, 'points' => 0];
             $costPerCard = (int) ($typeInfo['points'] ?? 0);
 
             $agentAccounts = null;
             $agentIndex = null;
-            if (isAgent()) {
-                if ($notes === '') {
-                    $notes = '代理生成: ' . ($_SESSION['username'] ?? '代理');
-                }
+            if ($isAgentUser) {
                 $agentAccounts = readAccounts();
                 foreach ($agentAccounts as $idx => $account) {
                     if (($account['id'] ?? '') === ($_SESSION['user_id'] ?? '') && ($account['type'] ?? '') === 'agent') {
@@ -1003,7 +1076,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
             ];
 
             if ($needsSave) {
-                if (isAgent()) {
+                if ($isAgentUser) {
                     $actualCost = $costPerCard * $created;
                     if ($actualCost > 0 && $agentIndex !== null) {
                         $agentAccounts[$agentIndex]['points'] -= $actualCost;
@@ -1124,6 +1197,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
 $allCards = readData();
 $devices = readDevices();
 $accounts = readAccounts();
+$userLookup = ['admin' => '管理员'];
+$currentAgentPoints = null;
+foreach ($accounts as $account) {
+    if (isset($account['id'], $account['username'])) {
+        $userLookup[$account['id']] = $account['username'];
+    }
+    if (isAgent() && ($account['id'] ?? '') === ($_SESSION['user_id'] ?? '')) {
+        $currentAgentPoints = $account['points'] ?? 0;
+    }
+}
 $agentAccounts = array_values(array_filter($accounts, fn($acc) => ($acc['type'] ?? '') === 'agent'));
 
 if (isAgent()) {
