@@ -1423,25 +1423,10 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 $_SESSION['message'] = $cards[$index]['disabled'] ? '卡密已禁用' : '卡密已启用';
             }
             break;
-        case 'reset_card':
-            $index = $findCard();
-            if ($index !== null && cardVisibleToCurrentUser($cards[$index])) {
-                $cards[$index]['status'] = 'unused';
-                $cards[$index]['disabled'] = false;
-                $cards[$index]['used_at'] = null;
-                $cards[$index]['expire_time'] = null;
-                $cards[$index]['used_by'] = null;
-                $cardKey = $cards[$index]['card_key'];
-                unset($devices[$cardKey]);
-                writeDevices($devices);
-                $needsSave = true;
-                $_SESSION['message'] = '卡密已重置';
-            }
-            break;
         case 'update_max_devices':
             $index = $findCard();
             if ($index !== null && cardVisibleToCurrentUser($cards[$index])) {
-                $value = max(1, min(10, (int) $extra));
+                $value = max(1, min(9999, (int) $extra));
                 $cards[$index]['max_devices'] = $value;
                 $needsSave = true;
                 $_SESSION['message'] = '多开数量已更新';
@@ -1476,31 +1461,6 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 $cards[$index] = adjustCardExpireDays($cards[$index], $days, getCardTypesWithDynamicPoints());
                 $needsSave = true;
                 $_SESSION['message'] = "已调整 {$days} 天" . ($deltaPoints !== 0 ? "，积分变动 {$deltaPoints}" : '');
-            }
-            break;
-        case 'recycle_card':
-            if (!isAdmin()) {
-                $_SESSION['error'] = '仅管理员可回收卡密';
-                break;
-            }
-            $index = $findCard();
-            if ($index !== null && cardVisibleToCurrentUser($cards[$index])) {
-                $cardKey = $cards[$index]['card_key'];
-                $refund = (int) ($cards[$index]['points_spent'] ?? 0);
-                if ($refund > 0) {
-                    changeAgentPoints($cards[$index]['created_by'] ?? '', $refund);
-                }
-                $cards[$index]['points_spent'] = 0;
-                $cards[$index]['status'] = 'unused';
-                $cards[$index]['disabled'] = false;
-                $cards[$index]['used_at'] = null;
-                $cards[$index]['expire_time'] = null;
-                $cards[$index]['used_by'] = null;
-                unset($devices[$cardKey]);
-                writeDevices($devices);
-                $needsSave = true;
-                $_SESSION['message'] = '卡密已回收并返还积分';
-                addLog('recycle_card', $_SESSION['user_id'], ['card' => $cardKey, 'refund' => $refund]);
             }
             break;
         case 'batch_delete':

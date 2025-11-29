@@ -435,13 +435,9 @@
                             <?php else: ?>
                                 <button onclick="submitAction('toggle_disable','<?php echo $cardIdEsc; ?>')">启用</button>
                             <?php endif; ?>
-                            <button onclick="submitAction('reset_card','<?php echo $cardIdEsc; ?>')">重置</button>
                             <button onclick="promptMax('<?php echo $cardIdEsc; ?>','<?php echo $card['max_devices'] ?? 1; ?>')">多开</button>
                             <button onclick="promptNotes('<?php echo $cardIdEsc; ?>','<?php echo htmlspecialchars($card['notes'] ?? '', ENT_QUOTES); ?>')">备注</button>
                             <button onclick="promptDays('<?php echo $cardIdEsc; ?>')">调天数</button>
-                            <?php if (isAdmin()): ?>
-                                <button onclick="submitAction('recycle_card','<?php echo $cardIdEsc; ?>')">回收</button>
-                            <?php endif; ?>
                             <button class="danger" onclick="confirmDelete('<?php echo $cardIdEsc; ?>')">删除</button>
                         </td>
                     </tr>
