@@ -814,6 +814,7 @@ if (isset($_GET['api'])) {
                 'message' => $result['is_new_device'] ? '设备登录成功' : '设备验证成功',
                 'data' => [
                     'card_type' => $card['type'],
+                    'card_name' => $cardTypes[$card['type']]['name'] ?? $card['type'],
                     'expire_time' => $card['expire_time'],
                     'max_devices' => $maxDevices,
                     'app_id' => $card['app_id'] ?? 'app_general',
@@ -865,6 +866,7 @@ if (isset($_GET['api'])) {
                 'message' => $result['is_new_device'] ? '设备登录成功' : '设备重新登录成功',
                 'data' => [
                     'card_type' => $card['type'],
+                    'card_name' => $cardTypes[$card['type']]['name'] ?? $card['type'],
                     'expire_time' => $card['expire_time'],
                     'online_count' => $result['online_count'],
                     'app_id' => $card['app_id'] ?? 'app_general',
