@@ -930,7 +930,8 @@ if (isset($_GET['api'])) {
                 'device_id' => $trialDevice,
                 'started_at' => date('Y-m-d H:i:s', $now),
                 'expires_at' => $now + $trialDuration,
-                'duration' => $trialDuration
+                'duration' => $trialDuration,
+                'app_id' => $requestedApp
             ];
             writeTrialSessions($trials);
             addLog('trial_start', $_SESSION['user_id'] ?? 'anonymous', ['device_id' => $trialDevice, 'duration' => $trialDuration]);
@@ -1075,11 +1076,14 @@ if (!isLoggedIn()) {
     exit;
 }
 
-if (isAgent() && !isset($_SESSION['agent_app_id'])) {
+if (isAgent()) {
     $accounts = readAccounts();
     foreach ($accounts as $account) {
         if (($account['id'] ?? '') === ($_SESSION['user_id'] ?? '')) {
-            $_SESSION['agent_app_id'] = $account['app_id'] ?? 'all';
+            $scope = $account['app_id'] ?? 'all';
+            if (!isset($_SESSION['agent_app_id']) || $_SESSION['agent_app_id'] !== $scope) {
+                $_SESSION['agent_app_id'] = $scope;
+            }
             break;
         }
     }
@@ -1604,5 +1608,18 @@ if (isAgent() && $agentAppScope !== 'all') {
 if (empty($availableApps)) {
     $availableApps = [ $applicationsById['app_general'] ];
 }
+
+$trialSessions = readTrialSessions();
+$activeTrials = [];
+$now = time();
+foreach ($trialSessions as $trial) {
+    $expires = (int) ($trial['expires_at'] ?? 0);
+    if ($expires > $now) {
+        $trial['expires_at'] = $expires;
+        $trial['seconds_left'] = $expires - $now;
+        $activeTrials[] = $trial;
+    }
+}
+$activeTrialsDisplay = $activeTrials;
 
 include __DIR__ . '/main_view.php';

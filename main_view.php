@@ -84,8 +84,17 @@
         th.col-type { background: linear-gradient(120deg,#ab47bc,#8e24aa); }
         th.col-status { background: linear-gradient(120deg,#26c6da,#00acc1); }
         th.col-expire { background: linear-gradient(120deg,#ef5350,#e53935); }
+        th.col-multi { background: linear-gradient(120deg,#ff8a65,#f4511e); }
+        th.col-online { background: linear-gradient(120deg,#26a69a,#00897b); }
+        th.col-heartbeat { background: linear-gradient(120deg,#ec407a,#d81b60); }
+        th.col-app { background: linear-gradient(120deg,#7e57c2,#5e35b1); }
+        th.col-owner { background: linear-gradient(120deg,#64b5f6,#1e88e5); }
+        th.col-group { background: linear-gradient(120deg,#80cbc4,#26a69a); }
+        th.col-notes { background: linear-gradient(120deg,#cfd8dc,#90a4ae); }
+        th.col-actions { background: linear-gradient(120deg,#ffa726,#fb8c00); }
         tr:nth-child(even) td { background: #fafafa; }
         tr:hover td { background: #f0f4ff; }
+        .trial-row td { background: #fffde7; font-style: italic; }
         .bulk-actions {
             display: none;
             align-items: center;
@@ -344,18 +353,37 @@
                         <th class="col-type">类型</th>
                         <th class="col-status">状态</th>
                         <th class="col-expire">到期时间</th>
-                        <th>多开</th>
-                        <th>在线/总</th>
-                        <th>上次心跳</th>
-                        <th>应用</th>
-                        <th>生成者</th>
-                        <th>分组</th>
-                        <th>备注</th>
-                        <th>操作</th>
+                        <th class="col-multi">多开</th>
+                        <th class="col-online">在线/总</th>
+                        <th class="col-heartbeat">上次心跳</th>
+                        <th class="col-app">应用</th>
+                        <th class="col-owner">生成者</th>
+                        <th class="col-group">分组</th>
+                        <th class="col-notes">备注</th>
+                        <th class="col-actions">操作</th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php if (empty($visibleCards)): ?>
+        <?php if (isAdmin() && !empty($activeTrialsDisplay)): ?>
+            <?php foreach ($activeTrialsDisplay as $trial): ?>
+                <tr class="trial-row">
+                    <td>-</td>
+                    <td><span class="card-key">TRIAL-<?php echo htmlspecialchars($trial['device_id']); ?></span></td>
+                    <td><span class="tag" style="background:#ffecb3;color:#ff6f00;">试用</span></td>
+                    <td><span class="tag status-used">进行中</span></td>
+                    <td><?php echo date('Y-m-d H:i:s', $trial['expires_at']); ?></td>
+                    <td>1</td>
+                    <td>1/1</td>
+                    <td><?php echo htmlspecialchars($trial['started_at']); ?></td>
+                    <td><span class="tag tag-app"><?php echo htmlspecialchars($applicationsById[$trial['app_id'] ?? 'app_general']['name'] ?? '通用'); ?></span></td>
+                    <td>试用</td>
+                    <td><span class="tag">试用</span></td>
+                    <td>API 试用（剩余 <?php echo max(0, $trial['seconds_left']); ?> 秒）</td>
+                    <td>-</td>
+                </tr>
+            <?php endforeach; ?>
+        <?php endif; ?>
+        <?php if (empty($visibleCards)): ?>
                     <tr><td colspan="12" style="text-align:center;padding:40px;">暂无数据</td></tr>
                 <?php else: ?>
                     <?php foreach ($visibleCards as $card):
