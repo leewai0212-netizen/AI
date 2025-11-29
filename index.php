@@ -824,6 +824,84 @@ if (($config['backup']['auto_backup'] ?? false)) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login') {
     $action = $_POST['action'] ?? '';
+
+    if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent'], true)) {
+        if (!isAdmin()) {
+            $_SESSION['error'] = '权限不足';
+            header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
+            exit;
+        }
+        $accounts = readAccounts();
+        switch ($action) {
+            case 'add_agent':
+                $username = trim($_POST['username'] ?? '');
+                $password = trim($_POST['password'] ?? '');
+                $points = max(0, (int) ($_POST['points'] ?? 0));
+                if ($username === '' || $password === '') {
+                    $_SESSION['error'] = '用户名和密码不能为空';
+                    break;
+                }
+                foreach ($accounts as $account) {
+                    if ($account['username'] === $username) {
+                        $_SESSION['error'] = '该用户名已存在';
+                        $username = '';
+                        break 2;
+                    }
+                }
+                $accounts[] = [
+                    'id' => uniqid('agent_', true),
+                    'username' => $username,
+                    'password' => $password,
+                    'type' => 'agent',
+                    'points' => $points,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+                writeAccounts($accounts);
+                $_SESSION['message'] = '代理添加成功';
+                break;
+            case 'edit_agent':
+                $agentId = $_POST['agent_id'] ?? '';
+                $newPoints = isset($_POST['points']) ? max(0, (int) $_POST['points']) : null;
+                $newPassword = trim($_POST['password'] ?? '');
+                $updated = false;
+                foreach ($accounts as &$account) {
+                    if ($account['id'] === $agentId && $account['type'] === 'agent') {
+                        if ($newPoints !== null) {
+                            $account['points'] = $newPoints;
+                            $updated = true;
+                        }
+                        if ($newPassword !== '') {
+                            $account['password'] = $newPassword;
+                            $updated = true;
+                        }
+                        break;
+                    }
+                }
+                if ($updated) {
+                    writeAccounts($accounts);
+                    $_SESSION['message'] = '代理信息已更新';
+                } else {
+                    $_SESSION['error'] = '未找到该代理或没有可更新的数据';
+                }
+                break;
+            case 'delete_agent':
+                $agentId = $_POST['agent_id'] ?? '';
+                $before = count($accounts);
+                $accounts = array_values(array_filter($accounts, function ($account) use ($agentId) {
+                    return !($account['id'] === $agentId && $account['type'] === 'agent');
+                }));
+                if (count($accounts) < $before) {
+                    writeAccounts($accounts);
+                    $_SESSION['message'] = '代理已删除';
+                } else {
+                    $_SESSION['error'] = '未找到该代理';
+                }
+                break;
+        }
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
+        exit;
+    }
+
     $cards = readData();
     $devices = readDevices();
     $needsSave = false;
@@ -949,6 +1027,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login
 $allCards = readData();
 $devices = readDevices();
 $accounts = readAccounts();
+$agentAccounts = array_values(array_filter($accounts, fn($acc) => ($acc['type'] ?? '') === 'agent'));
 
 if (isAgent()) {
     $allCards = filterCardsForAgent($allCards, $_SESSION['username'], $_SESSION['user_id']);

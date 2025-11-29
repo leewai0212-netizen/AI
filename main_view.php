@@ -151,6 +151,7 @@
     <div class="tabs">
         <div class="tab active" data-tab="manage">卡密管理</div>
         <?php if (isAdmin()): ?>
+            <div class="tab" data-tab="agents">代理管理</div>
             <div class="tab" data-tab="api">API 文档</div>
         <?php endif; ?>
     </div>
@@ -306,6 +307,50 @@
         <?php endif; ?>
     </div>
     <?php if (isAdmin()): ?>
+    <div class="tab-content" id="agents">
+        <div class="api-doc">
+            <h2>代理管理</h2>
+            <p>创建、调整或删除代理账号，积分实时生效。</p>
+            <form class="inline-form" method="POST">
+                <input type="hidden" name="action" value="add_agent">
+                <input type="text" name="username" placeholder="用户名" required>
+                <input type="password" name="password" placeholder="密码" required>
+                <input type="number" name="points" min="0" placeholder="初始积分" value="0">
+                <button type="submit">➕ 添加代理</button>
+            </form>
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>积分</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($agentAccounts)): ?>
+                            <tr><td colspan="4" style="text-align:center;padding:30px;">暂无代理账户</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($agentAccounts as $agent):
+                                $agentIdEsc = htmlspecialchars($agent['id'], ENT_QUOTES);
+                            ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($agent['username']); ?></td>
+                                <td><?php echo (int) ($agent['points'] ?? 0); ?></td>
+                                <td><?php echo $agent['created_at'] ?? '-'; ?></td>
+                                <td class="actions">
+                                    <button onclick="editAgent('<?php echo $agentIdEsc; ?>','<?php echo htmlspecialchars($agent['username'], ENT_QUOTES); ?>','<?php echo (int) ($agent['points'] ?? 0); ?>')">编辑</button>
+                                    <button class="danger" onclick="deleteAgent('<?php echo $agentIdEsc; ?>')">删除</button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
     <div class="tab-content" id="api">
         <div class="api-doc">
             <h2>API 文档（全部内容可滚动查看）</h2>
@@ -327,6 +372,16 @@
                 <p>设备退出。</p>
             </div>
             <div class="api-block">
+                <strong>POST ?api=notifications</strong>
+                <p>获取当前登录用户的通知列表；<code>mark_notification_read</code> 用于标记已读。</p>
+<pre>// mark_notification_read 请求体
+{
+  "notification_id": "notif_xxx"
+}</pre>
+                <strong>GET ?health</strong>
+                <p>返回系统状态监控数据，便于外部健康检查。</p>
+            </div>
+            <div class="api-block">
                 <strong>错误码</strong>
 <pre>200 成功
 401 参数错误
@@ -345,6 +400,13 @@
     <input type="hidden" name="card_id" value="">
     <input type="hidden" name="extra" value="">
 </form>
+<form id="agentForm" method="POST" style="display:none;">
+    <input type="hidden" name="action" value="">
+    <input type="hidden" name="agent_id" value="">
+    <input type="hidden" name="username" value="">
+    <input type="hidden" name="password" value="">
+    <input type="hidden" name="points" value="">
+</form>
 <script>
     const tabs = document.querySelectorAll('.tab');
     const contents = document.querySelectorAll('.tab-content');
@@ -355,8 +417,20 @@
             tab.classList.add('active');
             const target = document.getElementById(tab.dataset.tab);
             if (target) target.classList.add('active');
+            const params = new URLSearchParams(window.location.search);
+            params.set('tab', tab.dataset.tab);
+            const query = params.toString();
+            const newUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+            history.replaceState({}, '', newUrl);
         });
     });
+    const initialTab = new URLSearchParams(window.location.search).get('tab');
+    if (initialTab) {
+        const initialEl = document.querySelector(`.tab[data-tab="${initialTab}"]`);
+        if (initialEl) {
+            initialEl.click();
+        }
+    }
     function submitAction(action, id, extra = '') {
         const form = document.getElementById('actionForm');
         form.action.value = action;
@@ -396,6 +470,36 @@
         const params = new URLSearchParams(window.location.search);
         params.set('page', page);
         window.location.search = params.toString();
+    }
+    function submitAgent(action, payload = {}) {
+        const form = document.getElementById('agentForm');
+        if (!form) return;
+        form.querySelector('input[name="action"]').value = action;
+        form.querySelector('input[name="agent_id"]').value = payload.agent_id || '';
+        form.querySelector('input[name="username"]').value = payload.username || '';
+        form.querySelector('input[name="password"]').value = payload.password || '';
+        form.querySelector('input[name="points"]').value = Object.prototype.hasOwnProperty.call(payload, 'points') ? payload.points : '';
+        form.submit();
+    }
+    function editAgent(id, username, points) {
+        const inputPoints = prompt('输入新的积分值', points);
+        if (inputPoints === null) return;
+        const normalized = String(inputPoints).trim();
+        if (normalized === '' || isNaN(normalized)) {
+            alert('请输入有效的积分数值');
+            return;
+        }
+        const newPassword = prompt('输入新密码（可留空）', '');
+        submitAgent('edit_agent', {
+            agent_id: id,
+            username,
+            points: normalized,
+            password: newPassword ? newPassword.trim() : ''
+        });
+    }
+    function deleteAgent(id) {
+        if (!confirm('确定要删除该代理吗？')) return;
+        submitAgent('delete_agent', { agent_id: id });
     }
 </script>
 </body>
