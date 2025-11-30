@@ -505,6 +505,39 @@ function parseUptimeSeconds(string $raw): ?string {
     return null;
 }
 
+function formatDurationSeconds(int $seconds): string {
+    if ($seconds < 0) {
+        $seconds = 0;
+    }
+    $days = intdiv($seconds, 86400);
+    $hours = intdiv($seconds % 86400, 3600);
+    $minutes = intdiv($seconds % 3600, 60);
+    if ($days > 0) {
+        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+    }
+    if ($hours > 0) {
+        return sprintf('%d小时 %d分钟', $hours, $minutes);
+    }
+    return sprintf('%d分钟', max(1, $minutes));
+}
+
+function getMemoryLimitMb(): ?float {
+    $raw = ini_get('memory_limit');
+    if ($raw === false || $raw === '' || $raw === '-1') {
+        return null;
+    }
+    $value = trim($raw);
+    $unit = strtolower(substr($value, -1));
+    $number = (float) $value;
+    if (in_array($unit, ['g', 'm', 'k'], true)) {
+        if ($unit === 'g') {
+            $number *= 1024;
+        } elseif ($unit === 'k') {
+            $number /= 1024;
+        }
+    }
+    return round($number, 2);
+}
 
 function autoBackup(): void {
     global $backupsDir, $dataFile, $devicesFile, $accountsFile, $logsFile;

@@ -98,7 +98,7 @@
         }
         .cards-table .actions {
             display: flex;
-            flex-wrap: wrap;
+            flex-direction: column;
             gap: 4px;
         }
         th.col-kami { background: linear-gradient(120deg,#ffb74d,#fb8c00); }
