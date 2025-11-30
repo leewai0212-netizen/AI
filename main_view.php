@@ -272,12 +272,12 @@
                 <h3>已到期</h3>
                 <p><?php echo $expiredCount; ?></p>
             </div>
-            <?php if (isAdmin()): ?>
-            <div class="stat-card" style="background:linear-gradient(120deg,#a18cd1,#fbc2eb);">
-                <h3>在线设备</h3>
-                <p><?php echo $systemStatus['active_connections'] ?? 0; ?></p>
+        </div>
+        <div class="system-row">
+            <div class="system-card online">
+                <strong><?php echo $systemStatus['active_connections']; ?></strong>
+                <span>在线设备</span>
             </div>
-            <?php endif; ?>
         </div>
         <?php if (isAgent()): ?>
             <div class="message" style="background:#e3f2fd;color:#0d47a1;">
