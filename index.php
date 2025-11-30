@@ -722,14 +722,7 @@ function calculatePointsDeltaForDays(array $card, int $days): int {
 }
 
 function cardMatchesApp(array $card, string $requestedApp): bool {
-    $cardApp = $card['app_id'] ?? 'app_general';
-    if ($cardApp === 'app_general') {
-        return true;
-    }
-    if ($requestedApp === '' || $requestedApp === 'app_general') {
-        return true;
-    }
-    return $cardApp === $requestedApp;
+    return true;
 }
 
 initSystemConfig();
