@@ -983,6 +983,13 @@ function calculatePointsDeltaForDays(array $card, int $days): int {
     return (int) round($pointsPerSecond * $deltaSeconds);
 }
 
+function isCardExpired(array $card): bool {
+    if (empty($card['expire_time'])) {
+        return false;
+    }
+    return strtotime($card['expire_time']) < time();
+}
+
 function cardMatchesApp(array $card, string $requestedApp): bool {
     return true;
 }
@@ -1837,25 +1844,27 @@ $search = trim($_GET['search'] ?? '');
 $statusFilter = $_GET['status'] ?? 'all';
 $typeFilter = $_GET['type'] ?? 'all';
 $groupFilter = $_GET['group'] ?? 'all';
+$expireFilter = $_GET['expired'] ?? 'all';
 
-$filteredCards = array_values(array_filter($allCards, function ($card) use ($search, $statusFilter, $typeFilter, $groupFilter) {
+$filteredCards = array_values(array_filter($allCards, function ($card) use ($search, $statusFilter, $typeFilter, $groupFilter, $expireFilter) {
     $matchSearch = $search === '' || stripos($card['card_key'], $search) !== false || stripos($card['notes'] ?? '', $search) !== false || stripos($card['used_by'] ?? '', $search) !== false;
     $matchStatus = $statusFilter === 'all' || ($card['disabled'] ?? false && $statusFilter === 'disabled') || ($card['status'] === $statusFilter);
     $matchType = $typeFilter === 'all' || $card['type'] === $typeFilter;
     $matchGroup = $groupFilter === 'all' || (($card['group'] ?? 'normal') === $groupFilter);
-    return $matchSearch && $matchStatus && $matchType && $matchGroup;
+    $matchExpire = true;
+    if ($expireFilter === 'expired') {
+        $matchExpire = isCardExpired($card);
+    } elseif ($expireFilter === 'active') {
+        $matchExpire = !isCardExpired($card);
+    }
+    return $matchSearch && $matchStatus && $matchType && $matchGroup && $matchExpire;
 }));
 
 $totalCards = count($filteredCards);
 $unusedCount = count(array_filter($filteredCards, fn($c) => $c['status'] === 'unused'));
 $usedCount = count(array_filter($filteredCards, fn($c) => $c['status'] === 'used'));
 $disabledCount = count(array_filter($filteredCards, fn($c) => $c['disabled'] ?? false));
-$expiredCount = count(array_filter($filteredCards, function ($card) {
-    if (empty($card['expire_time'])) {
-        return false;
-    }
-    return strtotime($card['expire_time']) < time();
-}));
+$expiredCount = count(array_filter($filteredCards, fn($card) => isCardExpired($card)));
 
 $perPage = 50;
 $page = max(1, (int) ($_GET['page'] ?? 1));

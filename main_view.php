@@ -385,6 +385,11 @@
                     <option value="<?php echo $groupId; ?>" <?php echo $groupFilter === $groupId ? 'selected' : ''; ?>><?php echo $group['name']; ?></option>
                 <?php endforeach; ?>
             </select>
+            <select name="expired">
+                <option value="all" <?php echo $expireFilter === 'all' ? 'selected' : ''; ?>>全部期限</option>
+                <option value="active" <?php echo $expireFilter === 'active' ? 'selected' : ''; ?>>未到期</option>
+                <option value="expired" <?php echo $expireFilter === 'expired' ? 'selected' : ''; ?>>已到期</option>
+            </select>
             <button type="submit">🔍 筛选</button>
         </form>
         <div class="bulk-actions" id="bulkActions">
