@@ -506,6 +506,7 @@
                     <input type="text" name="app_name" placeholder="应用名称" required>
                     <input type="text" name="app_id" placeholder="应用ID（可留空自动生成）">
                     <input type="text" name="app_description" placeholder="备注">
+                    <input type="number" min="1" name="rate_limit" placeholder="每分钟限流（默认 <?php echo DEFAULT_RATE_LIMIT_PER_MIN; ?> ）" value="<?php echo DEFAULT_RATE_LIMIT_PER_MIN; ?>">
                 </div>
                 <button type="submit">➕ 新增应用</button>
             </form>
@@ -515,6 +516,9 @@
                         <tr>
                             <th>名称</th>
                             <th>ID</th>
+                            <th>App Key</th>
+                            <th>App Secret</th>
+                            <th>限流/分钟</th>
                             <th>备注</th>
                             <th>在线/总卡密</th>
                             <th>操作</th>
@@ -523,10 +527,16 @@
                     <tbody>
                         <?php foreach ($applications as $app):
                             $stat = $appStats[$app['id']] ?? ['online' => 0, 'cards' => 0];
+                            $appKeyDisplay = htmlspecialchars($app['app_key'] ?? '-', ENT_QUOTES);
+                            $appSecretDisplay = htmlspecialchars($app['app_secret'] ?? '-', ENT_QUOTES);
+                            $appRateLimit = (int) ($app['rate_limit_per_min'] ?? DEFAULT_RATE_LIMIT_PER_MIN);
                         ?>
                         <tr>
                             <td><?php echo htmlspecialchars($app['name']); ?></td>
                             <td><?php echo htmlspecialchars($app['id']); ?></td>
+                            <td><code><?php echo $appKeyDisplay; ?></code></td>
+                            <td><code><?php echo $appSecretDisplay; ?></code></td>
+                            <td><?php echo $appRateLimit; ?></td>
                             <td><?php echo htmlspecialchars($app['description'] ?? '-'); ?></td>
                             <td><?php echo ($stat['online'] ?? 0) . ' / ' . ($stat['cards'] ?? 0); ?></td>
                             <td class="actions">
@@ -618,6 +628,16 @@
     <div class="tab-content" id="api">
         <div class="api-doc">
             <h2>API 文档（全部内容可滚动查看）</h2>
+            <div class="api-block">
+                <strong>签名 + 限流 + 审计</strong>
+                <p>所有 API 请求必须携带下列 Header，用于签名校验与审计：</p>
+<pre>X-App-Key: {app_key}
+X-Timestamp: {Unix时间戳（秒）}
+X-Nonce: {16-32位随机字符串}
+X-Signature: HMAC_SHA256(app_key + timestamp + nonce + body, app_secret)</pre>
+                <p>服务器允许 ±5 分钟时间漂移，并拒绝 5 分钟内重复 nonce。默认限流 <?php echo DEFAULT_RATE_LIMIT_PER_MIN; ?> 次/分钟/应用/来源 IP，超过会返回 429，响应头附带 <code>X-RateLimit-Limit</code> / <code>X-RateLimit-Remaining</code> / <code>X-RateLimit-Reset</code>。</p>
+                <p>所有调用都会落地至审计日志（记录 App ID、IP、nonce、payload 指纹等），便于追踪与回溯。</p>
+            </div>
             <div class="api-block">
                 <strong>POST ?api=verify</strong>
                 <p>验证并自动激活卡密，需传 <code>app_id</code>（卡所属应用，<code>app_general</code> 表示通用），超出多开限制会踢掉最久未心跳设备。</p>

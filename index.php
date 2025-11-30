@@ -13,6 +13,17 @@ $cardPointsFile = __DIR__ . '/card_points_config.json';
 $trialSessionsFile = __DIR__ . '/trial_sessions.json';
 
 const DEVICE_TIMEOUT_SECONDS = 18000; // 5 hours
+const SIGNATURE_WINDOW_SECONDS = 300; // 5 minutes
+const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute buckets
+const DEFAULT_RATE_LIMIT_PER_MIN = 120;
+
+define('RUNTIME_DIR', __DIR__ . '/runtime');
+define('NONCE_CACHE_FILE', RUNTIME_DIR . '/nonce_cache.json');
+define('RATE_LIMIT_FILE', RUNTIME_DIR . '/rate_limits.json');
+
+if (!is_dir(RUNTIME_DIR)) {
+    mkdir(RUNTIME_DIR, 0755, true);
+}
 
 function readJsonFile(string $path, $default = []) {
     if (!file_exists($path)) {
@@ -28,6 +39,14 @@ function readJsonFile(string $path, $default = []) {
 
 function writeJsonFile(string $path, $data): void {
     file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+}
+
+function generateAppKey(): string {
+    return 'ak_' . substr(bin2hex(random_bytes(16)), 0, 24);
+}
+
+function generateAppSecret(): string {
+    return 'sk_' . bin2hex(random_bytes(32));
 }
 
 function initSystemConfig(): void {
@@ -538,30 +557,71 @@ function writeAccounts(array $accounts): void {
     writeJsonFile($accountsFile, $accounts);
 }
 
+function createDefaultApplication(string $id = 'app_general', string $name = '通用', string $description = '默认应用'): array {
+    return [
+        'id' => $id,
+        'name' => $name,
+        'description' => $description,
+        'app_key' => generateAppKey(),
+        'app_secret' => generateAppSecret(),
+        'rate_limit_per_min' => DEFAULT_RATE_LIMIT_PER_MIN
+    ];
+}
+
 function readApplications(): array {
     global $applicationsFile;
-    if (!file_exists($applicationsFile)) {
-        $default = [
-            [
-                'id' => 'app_general',
-                'name' => '通用',
-                'description' => '默认应用'
-            ]
-        ];
-        writeJsonFile($applicationsFile, $default);
-        return $default;
-    }
     $apps = readJsonFile($applicationsFile, []);
+    $changed = false;
+
     if (empty($apps)) {
-        $apps = [
-            [
-                'id' => 'app_general',
-                'name' => '通用',
-                'description' => '默认应用'
-            ]
-        ];
-        writeJsonFile($applicationsFile, $apps);
+        $apps = [createDefaultApplication()];
+        $changed = true;
     }
+
+    $hasGeneral = false;
+    foreach ($apps as $app) {
+        if (($app['id'] ?? '') === 'app_general') {
+            $hasGeneral = true;
+            break;
+        }
+    }
+    if (!$hasGeneral) {
+        $apps[] = createDefaultApplication();
+        $changed = true;
+    }
+
+    foreach ($apps as &$app) {
+        if (empty($app['id'])) {
+            $app['id'] = 'app_' . substr(bin2hex(random_bytes(4)), 0, 6);
+            $changed = true;
+        }
+        if (empty($app['name'])) {
+            $app['name'] = $app['id'];
+            $changed = true;
+        }
+        if (!isset($app['description'])) {
+            $app['description'] = '';
+            $changed = true;
+        }
+        if (empty($app['app_key'])) {
+            $app['app_key'] = generateAppKey();
+            $changed = true;
+        }
+        if (empty($app['app_secret'])) {
+            $app['app_secret'] = generateAppSecret();
+            $changed = true;
+        }
+        if (!isset($app['rate_limit_per_min']) || (int) $app['rate_limit_per_min'] <= 0) {
+            $app['rate_limit_per_min'] = DEFAULT_RATE_LIMIT_PER_MIN;
+            $changed = true;
+        }
+    }
+    unset($app);
+
+    if ($changed) {
+        writeApplications($apps);
+    }
+
     return $apps;
 }
 
@@ -578,6 +638,145 @@ function readTrialSessions(): array {
 function writeTrialSessions(array $sessions): void {
     global $trialSessionsFile;
     writeJsonFile($trialSessionsFile, $sessions);
+}
+
+function refreshNonceCache(): array {
+    $store = readJsonFile(NONCE_CACHE_FILE, []);
+    $now = time();
+    $changed = false;
+    foreach ($store as $key => $expires) {
+        if ((int) $expires <= $now) {
+            unset($store[$key]);
+            $changed = true;
+        }
+    }
+    if ($changed) {
+        writeJsonFile(NONCE_CACHE_FILE, $store);
+    }
+    return $store;
+}
+
+function isNonceFresh(string $appKey, string $nonce): bool {
+    if ($nonce === '') {
+        return false;
+    }
+    $store = refreshNonceCache();
+    return !isset($store[$appKey . ':' . $nonce]);
+}
+
+function rememberNonce(string $appKey, string $nonce, int $timestamp): bool {
+    if ($nonce === '') {
+        return false;
+    }
+    $store = refreshNonceCache();
+    $key = $appKey . ':' . $nonce;
+    if (isset($store[$key])) {
+        return false;
+    }
+    $store[$key] = $timestamp + SIGNATURE_WINDOW_SECONDS;
+    writeJsonFile(NONCE_CACHE_FILE, $store);
+    return true;
+}
+
+function enforceRateLimit(string $appId, string $clientIp, int $limitPerMinute = DEFAULT_RATE_LIMIT_PER_MIN): array {
+    $limit = max(1, (int) $limitPerMinute);
+    $now = time();
+    $buckets = readJsonFile(RATE_LIMIT_FILE, []);
+    $changed = false;
+    foreach ($buckets as $key => $entry) {
+        if (($entry['reset'] ?? 0) <= $now) {
+            unset($buckets[$key]);
+            $changed = true;
+        }
+    }
+    $bucketKey = $appId . '|' . $clientIp;
+    $entry = $buckets[$bucketKey] ?? ['count' => 0, 'reset' => $now + RATE_LIMIT_WINDOW_SECONDS];
+    if (($entry['reset'] ?? 0) <= $now) {
+        $entry['count'] = 0;
+        $entry['reset'] = $now + RATE_LIMIT_WINDOW_SECONDS;
+    }
+    if (($entry['count'] ?? 0) >= $limit) {
+        $buckets[$bucketKey] = $entry;
+        if ($changed) {
+            writeJsonFile(RATE_LIMIT_FILE, $buckets);
+        }
+        return [
+            'allowed' => false,
+            'remaining' => 0,
+            'reset' => $entry['reset'],
+            'limit' => $limit
+        ];
+    }
+    $entry['count'] = ($entry['count'] ?? 0) + 1;
+    $buckets[$bucketKey] = $entry;
+    writeJsonFile(RATE_LIMIT_FILE, $buckets);
+    return [
+        'allowed' => true,
+        'remaining' => max(0, $limit - $entry['count']),
+        'reset' => $entry['reset'],
+        'limit' => $limit
+    ];
+}
+
+function buildSignaturePayload(string $appKey, int $timestamp, string $nonce, string $rawBody): string {
+    return $appKey . $timestamp . $nonce . $rawBody;
+}
+
+function verifyApiSignature(string $rawBody, array $applications): array {
+    $appKey = $_SERVER['HTTP_X_APP_KEY'] ?? '';
+    $timestampRaw = $_SERVER['HTTP_X_TIMESTAMP'] ?? '';
+    $nonce = $_SERVER['HTTP_X_NONCE'] ?? '';
+    $signature = $_SERVER['HTTP_X_SIGNATURE'] ?? '';
+
+    $auditMeta = [
+        'app_key_suffix' => $appKey ? substr($appKey, -6) : null,
+        'nonce' => $nonce,
+        'timestamp' => $timestampRaw
+    ];
+
+    if ($appKey === '' || $timestampRaw === '' || $nonce === '' || $signature === '') {
+        return [false, null, '签名参数缺失', 401, $auditMeta];
+    }
+    if (!ctype_digit((string) $timestampRaw)) {
+        return [false, null, '时间戳无效', 401, $auditMeta];
+    }
+    $timestamp = (int) $timestampRaw;
+    $auditMeta['timestamp'] = $timestamp;
+    if (abs(time() - $timestamp) > SIGNATURE_WINDOW_SECONDS) {
+        return [false, null, '请求已过期，请重新发起', 401, $auditMeta];
+    }
+
+    $application = null;
+    foreach ($applications as $app) {
+        if (($app['app_key'] ?? '') === $appKey) {
+            $application = $app;
+            break;
+        }
+    }
+    if (!$application) {
+        return [false, null, 'AppKey无效', 401, $auditMeta];
+    }
+    $auditMeta['app_id'] = $application['id'] ?? null;
+
+    if (!isNonceFresh($appKey, $nonce)) {
+        return [false, null, 'nonce已使用，请更换', 401, $auditMeta];
+    }
+
+    $secret = $application['app_secret'] ?? '';
+    if ($secret === '') {
+        return [false, null, '应用未配置签名密钥', 500, $auditMeta];
+    }
+
+    $expectedSignature = hash_hmac('sha256', buildSignaturePayload($appKey, $timestamp, $nonce, $rawBody), $secret);
+    if (!hash_equals($expectedSignature, $signature)) {
+        return [false, null, '签名校验失败', 401, $auditMeta];
+    }
+
+    if (!rememberNonce($appKey, $nonce, $timestamp)) {
+        return [false, null, 'nonce已使用，请更换', 401, $auditMeta];
+    }
+    $auditMeta['signature_preview'] = substr($expectedSignature, 0, 12);
+    return [true, $application, null, 200, $auditMeta];
 }
 
 function getTrialDurationSeconds(): int {
@@ -714,8 +913,9 @@ foreach ($applications as $app) {
     $applicationsById[$app['id']] = $app;
 }
 if (!isset($applicationsById['app_general'])) {
-    $applicationsById['app_general'] = ['id' => 'app_general', 'name' => '通用', 'description' => '默认应用'];
-    $applications[] = $applicationsById['app_general'];
+    $defaultApp = createDefaultApplication();
+    $applicationsById['app_general'] = $defaultApp;
+    $applications[] = $defaultApp;
     writeApplications($applications);
 }
 
@@ -734,13 +934,61 @@ if (isset($_GET['api'])) {
     header('Content-Type: application/json');
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-App-Key, X-Timestamp, X-Nonce, X-Signature');
+    header('Access-Control-Expose-Headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset');
+
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        http_response_code(204);
+        exit;
+    }
 
     $action = $_GET['api'];
-    $payload = json_decode(file_get_contents('php://input'), true);
-    if (!$payload) {
-        $payload = $_POST;
+    $rawInput = file_get_contents('php://input');
+    if ($rawInput === false) {
+        $rawInput = '';
     }
+    $payload = json_decode($rawInput, true);
+    if (!is_array($payload)) {
+        $payload = $_POST ?? [];
+        if ($rawInput === '' && !empty($payload)) {
+            $rawInput = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    [$signatureOk, $apiAppContext, $signatureError, $signatureStatus, $signatureMeta] = verifyApiSignature($rawInput, $applications);
+    if (!$signatureOk) {
+        http_response_code($signatureStatus);
+        $response = ['code' => $signatureStatus, 'message' => $signatureError];
+        addLog('api_signature_failed', 'system', array_merge($signatureMeta, [
+            'ip' => $clientIP,
+            'action' => $action
+        ]));
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $rateResult = enforceRateLimit($apiAppContext['id'] ?? 'app_general', $clientIP, $apiAppContext['rate_limit_per_min'] ?? DEFAULT_RATE_LIMIT_PER_MIN);
+    if (!$rateResult['allowed']) {
+        $retryAfter = max(1, $rateResult['reset'] - time());
+        header('Retry-After: ' . $retryAfter);
+        header('X-RateLimit-Limit: ' . $rateResult['limit']);
+        header('X-RateLimit-Remaining: 0');
+        header('X-RateLimit-Reset: ' . $rateResult['reset']);
+        http_response_code(429);
+        $response = ['code' => 429, 'message' => '请求过于频繁，请稍后再试'];
+        addLog('rate_limit_block', 'system', [
+            'ip' => $clientIP,
+            'app_id' => $apiAppContext['id'] ?? null,
+            'limit' => $rateResult['limit'],
+            'reset' => $rateResult['reset'],
+            'action' => $action
+        ]);
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    header('X-RateLimit-Limit: ' . $rateResult['limit']);
+    header('X-RateLimit-Remaining: ' . $rateResult['remaining']);
+    header('X-RateLimit-Reset: ' . $rateResult['reset']);
 
     $accounts = readAccounts();
     $data = readData();
@@ -757,7 +1005,10 @@ if (isset($_GET['api'])) {
 
     $response = ['code' => 400, 'message' => '未知接口'];
 
-    $requestedApp = $payload['app_id'] ?? ($_GET['app_id'] ?? 'app_general');
+    $requestedApp = $payload['app_id'] ?? ($_GET['app_id'] ?? ($apiAppContext['id'] ?? 'app_general'));
+    if (($apiAppContext['id'] ?? 'app_general') !== 'app_general') {
+        $requestedApp = $apiAppContext['id'];
+    }
     if (!isset($applicationsById[$requestedApp])) {
         $requestedApp = 'app_general';
     }
@@ -975,6 +1226,10 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$lookupKey];
+            if (!cardMatchesApp($card, $requestedApp)) {
+                $response = ['code' => 410, 'message' => '应用不匹配，无法查看该卡密'];
+                break;
+            }
             $appId = $card['app_id'] ?? 'app_general';
             $response = [
                 'code' => 200,
@@ -1009,7 +1264,18 @@ if (isset($_GET['api'])) {
             break;
     }
 
-    addLog('api_' . $action, $_SESSION['user_id'] ?? 'anonymous', ['ip' => $clientIP]);
+    $auditDetails = [
+        'ip' => $clientIP,
+        'app_id' => $apiAppContext['id'] ?? null,
+        'app_key_suffix' => $signatureMeta['app_key_suffix'] ?? null,
+        'nonce' => $signatureMeta['nonce'] ?? null,
+        'timestamp' => $signatureMeta['timestamp'] ?? null,
+        'rate_limit' => $rateResult['limit'] ?? null,
+        'rate_remaining' => $rateResult['remaining'] ?? null,
+        'status_code' => $response['code'] ?? 0,
+        'payload_hash' => substr(sha1($rawInput), 0, 16)
+    ];
+    addLog('api_' . $action, $apiAppContext['id'] ?? 'api_client', $auditDetails);
     echo json_encode($response, JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -1246,6 +1512,7 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 $name = trim($_POST['app_name'] ?? '');
                 $description = trim($_POST['app_description'] ?? '');
                 $appId = trim($_POST['app_id'] ?? '');
+                $rateLimit = max(1, (int) ($_POST['rate_limit'] ?? DEFAULT_RATE_LIMIT_PER_MIN));
                 if ($name === '') {
                     $_SESSION['error'] = '应用名称不能为空';
                     break;
@@ -1263,7 +1530,10 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 $apps[] = [
                     'id' => $appId,
                     'name' => $name,
-                    'description' => $description
+                    'description' => $description,
+                    'app_key' => generateAppKey(),
+                    'app_secret' => generateAppSecret(),
+                    'rate_limit_per_min' => $rateLimit
                 ];
                 writeApplications($apps);
                 $_SESSION['message'] = '应用已创建';
