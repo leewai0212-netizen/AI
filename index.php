@@ -1400,6 +1400,7 @@ if (isAgent()) {
         }
     }
 }
+$agentAppScope = $_SESSION['agent_app_id'] ?? 'all';
 
 if (($config['backup']['auto_backup'] ?? false)) {
     if (!is_dir($backupsDir)) {
@@ -1802,8 +1803,6 @@ foreach ($accounts as $account) {
     }
 }
 $agentAccounts = array_values(array_filter($accounts, fn($acc) => ($acc['type'] ?? '') === 'agent'));
-$agentAppScope = $_SESSION['agent_app_id'] ?? 'all';
-
 if (isAgent()) {
     $allCards = filterCardsForAgent($allCards, $_SESSION['username'], $_SESSION['user_id'], $agentAppScope);
 }
