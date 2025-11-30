@@ -30,6 +30,24 @@ function writeJsonFile(string $path, $data): void {
     file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
+function pathAllowedByOpenBaseDir(string $path): bool {
+    $restrictions = ini_get('open_basedir');
+    if (!$restrictions) {
+        return true;
+    }
+    $normalized = rtrim($path, '/');
+    foreach (explode(PATH_SEPARATOR, $restrictions) as $allowed) {
+        $allowed = rtrim($allowed, '/');
+        if ($allowed === '') {
+            continue;
+        }
+        if (strncmp($normalized, $allowed, strlen($allowed)) === 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function initSystemConfig(): void {
     global $configFile;
     if (!file_exists($configFile)) {
@@ -271,17 +289,20 @@ function getErrorCountToday(): int {
 
 function getUptime(): string {
     $path = '/proc/uptime';
-    if (file_exists($path)) {
-        $parts = explode(' ', trim((string) file_get_contents($path)));
-        $secondsFloat = (float) ($parts[0] ?? 0);
-        $seconds = (int) floor($secondsFloat);
-        if ($seconds < 0) {
-            $seconds = 0;
+    if (pathAllowedByOpenBaseDir($path)) {
+        $contents = @file_get_contents($path);
+        if ($contents !== false) {
+            $parts = explode(' ', trim($contents));
+            $secondsFloat = (float) ($parts[0] ?? 0);
+            $seconds = (int) floor($secondsFloat);
+            if ($seconds < 0) {
+                $seconds = 0;
+            }
+            $days = intdiv($seconds, 86400);
+            $hours = intdiv($seconds % 86400, 3600);
+            $minutes = intdiv($seconds % 3600, 60);
+            return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
         }
-        $days = intdiv($seconds, 86400);
-        $hours = intdiv($seconds % 86400, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
     }
     return '未知';
 }
