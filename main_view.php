@@ -9,8 +9,13 @@
         body {
             margin: 0;
             font-family: 'Segoe UI', 'PingFang SC', sans-serif;
-            background: #f5f6fb;
             color: #333;
+            background-image:
+                linear-gradient(rgba(245, 246, 251, 0.88), rgba(245, 246, 251, 0.92)),
+                url('https://images.unsplash.com/photo-1503342250614-ca4407868a5b?auto=format&fit=crop&w=1600&q=80');
+            background-size: cover;
+            background-attachment: fixed;
+            background-position: center;
         }
         header {
             background: linear-gradient(135deg, #667eea, #764ba2);
