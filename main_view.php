@@ -293,7 +293,7 @@
         <div class="system-row">
             <?php
                 $loadValue = $systemStatus['load_avg'] ?? '未知';
-                $loadDisplay = is_numeric($loadValue) ? $loadValue : htmlspecialchars((string) $loadValue);
+                $loadDisplay = htmlspecialchars(is_array($loadValue) ? implode(' / ', $loadValue) : (string) $loadValue);
                 $cpuValue = $systemStatus['cpu_usage'] ?? '未知';
                 $cpuDisplay = is_numeric($cpuValue) ? round((float) $cpuValue, 1) . '%' : htmlspecialchars((string) $cpuValue);
                 $memoryValue = $systemStatus['memory_usage'] ?? '未知';

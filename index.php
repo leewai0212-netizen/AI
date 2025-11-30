@@ -174,6 +174,96 @@ function updateSystemConfig(array $config): void {
     writeJsonFile($configFile, $config);
 }
 
+function getLoadAverageValues(): ?array {
+    if (function_exists('sys_getloadavg')) {
+        $load = sys_getloadavg();
+        if (is_array($load) && count($load) === 3) {
+            return array_map(function ($v) {
+                return is_numeric($v) ? (float) $v : 0.0;
+            }, $load);
+        }
+    }
+    $contents = readSystemFile('/proc/loadavg');
+    if ($contents) {
+        $parts = preg_split('/\s+/', trim($contents));
+        if (count($parts) >= 3) {
+            return [
+                (float) $parts[0],
+                (float) $parts[1],
+                (float) $parts[2]
+            ];
+        }
+    }
+    return null;
+}
+
+function readCpuTotals(): ?array {
+    $stat = readSystemFile('/proc/stat');
+    if ($stat === null) {
+        return null;
+    }
+    foreach (explode("\n", $stat) as $line) {
+        if (strpos($line, 'cpu ') === 0) {
+            $parts = preg_split('/\s+/', trim($line));
+            array_shift($parts);
+            $values = array_map('floatval', array_slice($parts, 0, 8));
+            $total = array_sum($values);
+            $idle = $values[3] + ($values[4] ?? 0);
+            return ['total' => $total, 'idle' => $idle];
+        }
+    }
+    return null;
+}
+
+function getCpuUsageSampled(): ?float {
+    $first = readCpuTotals();
+    if ($first === null) {
+        return null;
+    }
+    usleep(200000);
+    $second = readCpuTotals();
+    if ($second === null) {
+        return null;
+    }
+    $totalDiff = $second['total'] - $first['total'];
+    $idleDiff = $second['idle'] - $first['idle'];
+    if ($totalDiff <= 0) {
+        return null;
+    }
+    return round((1 - ($idleDiff / $totalDiff)) * 100, 2);
+}
+
+function getMemoryStats(): ?array {
+    $memInfo = readSystemFile('/proc/meminfo');
+    if ($memInfo === null) {
+        return null;
+    }
+    $extract = function ($key) use ($memInfo) {
+        if (preg_match("/^$key:\\s+(\\d+)/mi", $memInfo, $match)) {
+            return (int) $match[1] * 1024;
+        }
+        return null;
+    };
+    $total = $extract('MemTotal');
+    if (!$total) {
+        return null;
+    }
+    $available = $extract('MemAvailable');
+    if ($available === null) {
+        $free = $extract('MemFree') ?? 0;
+        $buffers = $extract('Buffers') ?? 0;
+        $cached = $extract('Cached') ?? 0;
+        $available = $free + $buffers + $cached;
+    }
+    $used = max(0, $total - $available);
+    return [
+        'total_mb' => round($total / 1048576, 2),
+        'used_mb' => round($used / 1048576, 2),
+        'available_mb' => round($available / 1048576, 2),
+        'usage_percent' => $total > 0 ? round(($used / $total) * 100, 2) : 0
+    ];
+}
+
 function addLog(string $action, string $userId, array $details = []): void {
     global $logsFile;
     $logs = readLogs();
@@ -297,66 +387,24 @@ function verifyJWT(string $jwt) {
 }
 
 function getSystemStatus(): array {
-    $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0];
-    $cpuCores = getCpuCoreCount();
-    $loadMinute = isset($load[0]) ? round((float) $load[0], 2) : '未知';
-    $cpu = null;
-    if ($cpuCores > 0 && isset($load[0])) {
-        $cpu = round(min(100, max(0, ($load[0] / max(1, $cpuCores)) * 100)), 1);
+    $loadValues = getLoadAverageValues();
+    $loadDisplay = $loadValues ? implode(' / ', array_map(fn($v) => number_format($v, 2), $loadValues)) : '未知';
+    $cpuUsage = getCpuUsageSampled();
+    if (!is_numeric($cpuUsage)) {
+        $cpuCores = getCpuCoreCount();
+        if ($cpuCores > 0 && is_array($loadValues)) {
+            $cpuUsage = round(min(100, max(0, ($loadValues[0] / max(1, $cpuCores)) * 100)), 1);
+        } else {
+            $cpuUsage = getFallbackCpuPercent();
+        }
+    }
+    $memoryStats = getMemoryStats();
+    if ($memoryStats) {
+        $memoryUsage = $memoryStats['used_mb'];
+        $memoryLimit = $memoryStats['total_mb'];
     } else {
-        $loadAvgText = readSystemFile('/proc/loadavg') ?? readSystemCommand('cat /proc/loadavg');
-        if ($loadAvgText) {
-            $parts = preg_split('/\s+/', trim($loadAvgText));
-            $loadValue = (float) ($parts[0] ?? 0);
-            if ($cpuCores > 0 && $loadValue >= 0) {
-                $cpu = round(min(100, max(0, ($loadValue / max(1, $cpuCores)) * 100)), 1);
-            }
-        }
-    }
-    if (!is_numeric($cpu)) {
-        $cpu = getFallbackCpuPercent();
-    }
-    $memoryUsage = null;
-    $memInfo = readSystemFile('/proc/meminfo');
-    $memoryLimit = getMemoryLimitMb();
-    if ($memInfo !== null) {
-        $memTotal = null;
-        $memAvailable = null;
-        foreach (explode("\n", $memInfo) as $line) {
-            if (strpos($line, 'MemTotal:') === 0) {
-                $memTotal = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
-            } elseif (strpos($line, 'MemAvailable:') === 0) {
-                $memAvailable = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
-            }
-            if ($memTotal !== null && $memAvailable !== null) {
-                break;
-            }
-        }
-        if ($memTotal !== null && $memAvailable !== null && $memTotal > 0) {
-            $usedKb = max(0, $memTotal - $memAvailable);
-            $memoryUsage = round($usedKb / 1024, 2); // MB
-        }
-    } else {
-        $freeOutput = readSystemCommand('free -m');
-        if ($freeOutput) {
-            $lines = preg_split('/\r?\n/', $freeOutput);
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (stripos($line, 'Mem:') === 0) {
-                    $pieces = preg_split('/\s+/', $line);
-                    if (count($pieces) >= 3) {
-                        $usedMb = (float) ($pieces[2] ?? 0);
-                        if ($usedMb > 0) {
-                            $memoryUsage = round($usedMb, 2);
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    }
-    if (!is_numeric($memoryUsage)) {
         $memoryUsage = round(memory_get_usage(true) / 1048576, 2);
+        $memoryLimit = getMemoryLimitMb();
     }
     $diskUsage = 0;
     if (function_exists('disk_free_space')) {
@@ -368,8 +416,8 @@ function getSystemStatus(): array {
     }
     $uptime = getUptime();
     return [
-        'load_avg' => $loadMinute,
-        'cpu_usage' => $cpu,
+        'load_avg' => $loadDisplay,
+        'cpu_usage' => $cpuUsage,
         'memory_usage' => $memoryUsage,
         'memory_limit' => $memoryLimit,
         'disk_usage' => $diskUsage,
