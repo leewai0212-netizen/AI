@@ -817,10 +817,6 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$cardKey];
-             if (!cardMatchesApp($card, $requestedApp)) {
-                $response = ['code' => 410, 'message' => '应用不匹配，无法使用'];
-                break;
-            }
             if (($card['disabled'] ?? false)) {
                 $response = ['code' => 403, 'message' => '卡密已禁用'];
                 break;
@@ -869,10 +865,6 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$cardKey];
-            if (!cardMatchesApp($card, $requestedApp)) {
-                $response = ['code' => 410, 'message' => '应用不匹配，无法使用'];
-                break;
-            }
             if ($card['status'] === 'unused') {
                 foreach ($data as &$item) {
                     if ($item['card_key'] === $cardKey) {
@@ -1011,10 +1003,6 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$lookupKey];
-            if (!cardMatchesApp($card, $requestedApp)) {
-                $response = ['code' => 410, 'message' => '应用不匹配，无法查看该卡密'];
-                break;
-            }
             $appId = $card['app_id'] ?? 'app_general';
             $response = [
                 'code' => 200,
