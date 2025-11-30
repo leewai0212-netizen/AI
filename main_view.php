@@ -98,8 +98,13 @@
         }
         .cards-table .actions {
             display: flex;
-            flex-direction: column;
+            flex-wrap: nowrap;
             gap: 4px;
+            white-space: nowrap;
+        }
+        .cards-table .actions button {
+            flex: 1;
+            min-width: 60px;
         }
         th.col-kami { background: linear-gradient(120deg,#ffb74d,#fb8c00); }
         th.col-type { background: linear-gradient(120deg,#d66efd,#8e2de2); }

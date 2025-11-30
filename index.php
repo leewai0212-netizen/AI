@@ -465,6 +465,15 @@ function getUptime(): string {
     if ($psUptime !== null) {
         return trim($psUptime);
     }
+    $procLines = @file('/proc/uptime');
+    if ($procLines !== false && isset($procLines[0])) {
+        $parts = explode(' ', trim($procLines[0]));
+        $secondsFloat = (float) ($parts[0] ?? 0);
+        $seconds = (int) floor($secondsFloat);
+        if ($seconds >= 0) {
+            return formatDurationSeconds($seconds);
+        }
+    }
     return '未知';
 }
 
