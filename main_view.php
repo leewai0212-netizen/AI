@@ -97,14 +97,14 @@
             word-break: break-word;
         }
         .cards-table .actions {
-            display: inline-flex;
-            flex-wrap: nowrap;
+            display: flex;
+            flex-wrap: wrap;
             gap: 4px;
-            white-space: nowrap;
+            white-space: normal;
         }
         .cards-table .actions button {
-            flex: 0 0 auto;
-            min-width: 58px;
+            flex: 1 1 65px;
+            min-width: 65px;
         }
         th.col-kami { background: linear-gradient(120deg,#ffb74d,#fb8c00); }
         th.col-type { background: linear-gradient(120deg,#d66efd,#8e2de2); }
