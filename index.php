@@ -262,20 +262,23 @@ function verifyJWT(string $jwt) {
 function getSystemStatus(): array {
     $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0];
     $cpuCores = getCpuCoreCount();
-    $cpu = '受限';
+    $cpu = null;
     if ($cpuCores > 0 && isset($load[0])) {
-        $cpu = round(min(100, ($load[0] / max(1, $cpuCores)) * 100), 1);
+        $cpu = round(min(100, max(0, ($load[0] / max(1, $cpuCores)) * 100)), 1);
     } else {
         $loadAvgText = readSystemFile('/proc/loadavg') ?? readSystemCommand('cat /proc/loadavg');
         if ($loadAvgText) {
             $parts = preg_split('/\s+/', trim($loadAvgText));
             $loadValue = (float) ($parts[0] ?? 0);
             if ($cpuCores > 0 && $loadValue >= 0) {
-                $cpu = round(min(100, ($loadValue / max(1, $cpuCores)) * 100), 1);
+                $cpu = round(min(100, max(0, ($loadValue / max(1, $cpuCores)) * 100)), 1);
             }
         }
     }
-    $memoryUsage = '受限';
+    if (!is_numeric($cpu)) {
+        $cpu = getFallbackCpuPercent();
+    }
+    $memoryUsage = null;
     $memInfo = readSystemFile('/proc/meminfo');
     if ($memInfo !== null) {
         $memTotal = null;
@@ -295,7 +298,7 @@ function getSystemStatus(): array {
             $memoryUsage = round($usedKb / 1024, 2); // MB
         }
     } else {
-        $freeOutput = readSystemCommand('free -k');
+        $freeOutput = readSystemCommand('free -m');
         if ($freeOutput) {
             $lines = preg_split('/\r?\n/', $freeOutput);
             foreach ($lines as $line) {
@@ -303,9 +306,9 @@ function getSystemStatus(): array {
                 if (stripos($line, 'Mem:') === 0) {
                     $pieces = preg_split('/\s+/', $line);
                     if (count($pieces) >= 3) {
-                        $usedKb = (int) ($pieces[2] ?? 0);
-                        if ($usedKb > 0) {
-                            $memoryUsage = round($usedKb / 1024, 2);
+                        $usedMb = (float) ($pieces[2] ?? 0);
+                        if ($usedMb > 0) {
+                            $memoryUsage = round($usedMb, 2);
                         }
                     }
                     break;
@@ -386,16 +389,9 @@ function getErrorCountToday(): int {
 function getUptime(): string {
     $contents = readSystemFile('/proc/uptime');
     if ($contents !== null) {
-        $parts = explode(' ', $contents);
-        $secondsFloat = (float) ($parts[0] ?? 0);
-        $seconds = (int) floor($secondsFloat);
-        if ($seconds < 0) {
-            $seconds = 0;
+        if ($duration = parseUptimeSeconds($contents)) {
+            return $duration;
         }
-        $days = intdiv($seconds, 86400);
-        $hours = intdiv($seconds % 86400, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
     }
     $uptimePretty = readSystemCommand('uptime -p');
     if ($uptimePretty !== null) {
@@ -403,16 +399,13 @@ function getUptime(): string {
     }
     $uptimeRaw = readSystemCommand('cat /proc/uptime');
     if ($uptimeRaw !== null) {
-        $parts = explode(' ', $uptimeRaw);
-        $secondsFloat = (float) ($parts[0] ?? 0);
-        $seconds = (int) floor($secondsFloat);
-        if ($seconds < 0) {
-            $seconds = 0;
+        if ($duration = parseUptimeSeconds($uptimeRaw)) {
+            return $duration;
         }
-        $days = intdiv($seconds, 86400);
-        $hours = intdiv($seconds % 86400, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+    }
+    $psUptime = readSystemCommand('ps -p 1 -o etime=');
+    if ($psUptime !== null) {
+        return trim($psUptime);
     }
     return '未知';
 }
@@ -436,6 +429,25 @@ function getCpuCoreCount(): int {
         }
     }
     return $count = 1;
+}
+
+function getFallbackCpuPercent(): float {
+    $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0];
+    $value = isset($load[0]) ? max(0, (float) $load[0]) : 0;
+    return round(min(100, $value * 50), 1);
+}
+
+function parseUptimeSeconds(string $raw): ?string {
+    $parts = explode(' ', trim($raw));
+    $secondsFloat = (float) ($parts[0] ?? 0);
+    $seconds = (int) floor($secondsFloat);
+    if ($seconds >= 0) {
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+    }
+    return null;
 }
 
 function autoBackup(): void {
