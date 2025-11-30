@@ -1860,6 +1860,12 @@ $filteredCards = array_values(array_filter($allCards, function ($card) use ($sea
     return $matchSearch && $matchStatus && $matchType && $matchGroup && $matchExpire;
 }));
 
+usort($filteredCards, function ($a, $b) {
+    $aTime = strtotime($a['created_at'] ?? $a['id'] ?? '0');
+    $bTime = strtotime($b['created_at'] ?? $b['id'] ?? '0');
+    return $bTime <=> $aTime;
+});
+
 $totalCards = count($filteredCards);
 $unusedCount = count(array_filter($filteredCards, fn($c) => $c['status'] === 'unused'));
 $usedCount = count(array_filter($filteredCards, fn($c) => $c['status'] === 'used'));
