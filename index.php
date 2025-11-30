@@ -79,6 +79,20 @@ function readSystemFile(string $path): ?string {
     return null;
 }
 
+function readSystemCommand(string $command): ?string {
+    if (!functionAvailable('shell_exec')) {
+        return null;
+    }
+    $output = @shell_exec($command . ' 2>/dev/null');
+    if (is_string($output)) {
+        $trimmed = trim($output);
+        if ($trimmed !== '') {
+            return $trimmed;
+        }
+    }
+    return null;
+}
+
 function initSystemConfig(): void {
     global $configFile;
     if (!file_exists($configFile)) {
@@ -251,6 +265,15 @@ function getSystemStatus(): array {
     $cpu = '受限';
     if ($cpuCores > 0 && isset($load[0])) {
         $cpu = round(min(100, ($load[0] / max(1, $cpuCores)) * 100), 1);
+    } else {
+        $loadAvgText = readSystemFile('/proc/loadavg') ?? readSystemCommand('cat /proc/loadavg');
+        if ($loadAvgText) {
+            $parts = preg_split('/\s+/', trim($loadAvgText));
+            $loadValue = (float) ($parts[0] ?? 0);
+            if ($cpuCores > 0 && $loadValue >= 0) {
+                $cpu = round(min(100, ($loadValue / max(1, $cpuCores)) * 100), 1);
+            }
+        }
     }
     $memoryUsage = '受限';
     $memInfo = readSystemFile('/proc/meminfo');
@@ -271,6 +294,27 @@ function getSystemStatus(): array {
             $usedKb = max(0, $memTotal - $memAvailable);
             $memoryUsage = round($usedKb / 1024, 2); // MB
         }
+    } else {
+        $freeOutput = readSystemCommand('free -k');
+        if ($freeOutput) {
+            $lines = preg_split('/\r?\n/', $freeOutput);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (stripos($line, 'Mem:') === 0) {
+                    $pieces = preg_split('/\s+/', $line);
+                    if (count($pieces) >= 3) {
+                        $usedKb = (int) ($pieces[2] ?? 0);
+                        if ($usedKb > 0) {
+                            $memoryUsage = round($usedKb / 1024, 2);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    if (!is_numeric($memoryUsage)) {
+        $memoryUsage = round(memory_get_usage(true) / 1048576, 2);
     }
     $diskUsage = 0;
     if (function_exists('disk_free_space')) {
@@ -343,6 +387,23 @@ function getUptime(): string {
     $contents = readSystemFile('/proc/uptime');
     if ($contents !== null) {
         $parts = explode(' ', $contents);
+        $secondsFloat = (float) ($parts[0] ?? 0);
+        $seconds = (int) floor($secondsFloat);
+        if ($seconds < 0) {
+            $seconds = 0;
+        }
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+    }
+    $uptimePretty = readSystemCommand('uptime -p');
+    if ($uptimePretty !== null) {
+        return str_replace('up ', '', $uptimePretty);
+    }
+    $uptimeRaw = readSystemCommand('cat /proc/uptime');
+    if ($uptimeRaw !== null) {
+        $parts = explode(' ', $uptimeRaw);
         $secondsFloat = (float) ($parts[0] ?? 0);
         $seconds = (int) floor($secondsFloat);
         if ($seconds < 0) {
