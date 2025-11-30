@@ -175,6 +175,17 @@ function updateSystemConfig(array $config): void {
     writeJsonFile($configFile, $config);
 }
 
+function getStatusOverrides(): array {
+    $config = getSystemConfig();
+    return $config['status_overrides'] ?? [];
+}
+
+function saveStatusOverrides(array $overrides): void {
+    $config = getSystemConfig();
+    $config['status_overrides'] = $overrides;
+    updateSystemConfig($config);
+}
+
 function addLog(string $action, string $userId, array $details = []): void {
     global $logsFile;
     $logs = readLogs();
@@ -377,6 +388,12 @@ function getSystemStatus(): array {
         'error_count_today' => getErrorCountToday(),
         'uptime' => $uptime
     ];
+    $overrides = getStatusOverrides();
+    foreach ($overrides as $key => $value) {
+        if ($value !== '' && $value !== null) {
+            $status[$key] = $value;
+        }
+    }
     return $status;
 }
 
@@ -1445,7 +1462,7 @@ if (($config['backup']['auto_backup'] ?? false)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login') {
     $action = $_POST['action'] ?? '';
 
-if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app'], true)) {
+if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app', 'update_status_overrides'], true)) {
         if (!isAdmin()) {
             $_SESSION['error'] = '权限不足';
             header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
@@ -1592,6 +1609,24 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 }
                 writeAccounts($accounts);
                 $_SESSION['message'] = '应用已删除';
+                break;
+            case 'update_status_overrides':
+                $redirectTab = 'manage';
+                $fields = [
+                    'cpu_usage' => trim($_POST['override_cpu'] ?? ''),
+                    'memory_usage' => trim($_POST['override_memory'] ?? ''),
+                    'memory_limit' => trim($_POST['override_memory_limit'] ?? ''),
+                    'active_connections' => trim($_POST['override_active'] ?? ''),
+                    'uptime' => trim($_POST['override_uptime'] ?? '')
+                ];
+                $clean = [];
+                foreach ($fields as $key => $value) {
+                    if ($value !== '') {
+                        $clean[$key] = $value;
+                    }
+                }
+                saveStatusOverrides($clean);
+                $_SESSION['message'] = '监控数值已更新';
                 break;
         }
         header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=' . $redirectTab);
@@ -1859,6 +1894,7 @@ $offset = ($page - 1) * $perPage;
 $visibleCards = array_slice($filteredCards, $offset, $perPage);
 
 $systemStatus = getSystemStatus();
+$statusOverrides = getStatusOverrides();
 $dynamicCardTypes = getCardTypesWithDynamicPoints();
 
 $appStats = [];
