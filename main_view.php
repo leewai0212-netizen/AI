@@ -212,9 +212,10 @@
         .system-card { border-radius: 14px; padding: 18px; text-align: center; color: #fff; box-shadow: 0 10px 25px rgba(15,23,42,0.12); }
         .system-card span { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; opacity: 0.85; }
         .system-card strong { display: block; font-size: 22px; margin-bottom: 6px; }
+        .system-card.load { background: linear-gradient(135deg,#a1c4fd,#c2e9fb); }
         .system-card.cpu { background: linear-gradient(135deg,#ff9a9e,#f6416c); }
         .system-card.memory { background: linear-gradient(135deg,#90f7ec,#32ccbc); }
-        .system-card.online { background: linear-gradient(135deg,#a18cd1,#fbc2eb); }
+        .system-card.disk { background: linear-gradient(135deg,#a18cd1,#fbc2eb); }
         .system-card.uptime { background: linear-gradient(135deg,#fddb92,#d1fdff); color: #3a3a3a; }
         .badge { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
         @media (max-width: 768px) {
@@ -291,6 +292,8 @@
         <?php if (isAdmin()): ?>
         <div class="system-row">
             <?php
+                $loadValue = $systemStatus['load_avg'] ?? '未知';
+                $loadDisplay = is_numeric($loadValue) ? $loadValue : htmlspecialchars((string) $loadValue);
                 $cpuValue = $systemStatus['cpu_usage'] ?? '未知';
                 $cpuDisplay = is_numeric($cpuValue) ? round((float) $cpuValue, 1) . '%' : htmlspecialchars((string) $cpuValue);
                 $memoryValue = $systemStatus['memory_usage'] ?? '未知';
@@ -304,7 +307,13 @@
                 } else {
                     $memoryDisplay = htmlspecialchars((string) $memoryValue);
                 }
+                $diskValue = $systemStatus['disk_usage'] ?? '未知';
+                $diskDisplay = is_numeric($diskValue) ? round((float) $diskValue, 1) . '%' : htmlspecialchars((string) $diskValue);
             ?>
+            <div class="system-card load">
+                <strong><?php echo $loadDisplay; ?></strong>
+                <span>系统负载</span>
+            </div>
             <div class="system-card cpu">
                 <strong><?php echo $cpuDisplay; ?></strong>
                 <span>CPU 使用率</span>
@@ -313,9 +322,9 @@
                 <strong><?php echo $memoryDisplay; ?></strong>
                 <span>内存占用</span>
             </div>
-            <div class="system-card online">
-                <strong><?php echo $systemStatus['active_connections']; ?></strong>
-                <span>在线设备</span>
+            <div class="system-card disk">
+                <strong><?php echo $diskDisplay; ?></strong>
+                <span>当前磁盘</span>
             </div>
             <div class="system-card uptime">
                 <strong><?php echo htmlspecialchars($systemStatus['uptime']); ?></strong>

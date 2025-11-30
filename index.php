@@ -299,6 +299,7 @@ function verifyJWT(string $jwt) {
 function getSystemStatus(): array {
     $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0];
     $cpuCores = getCpuCoreCount();
+    $loadMinute = isset($load[0]) ? round((float) $load[0], 2) : '未知';
     $cpu = null;
     if ($cpuCores > 0 && isset($load[0])) {
         $cpu = round(min(100, max(0, ($load[0] / max(1, $cpuCores)) * 100)), 1);
@@ -367,6 +368,7 @@ function getSystemStatus(): array {
     }
     $uptime = getUptime();
     return [
+        'load_avg' => $loadMinute,
         'cpu_usage' => $cpu,
         'memory_usage' => $memoryUsage,
         'memory_limit' => $memoryLimit,
