@@ -30,6 +30,15 @@ function writeJsonFile(string $path, $data): void {
     file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
+function functionAvailable(string $name): bool {
+    if (!function_exists($name)) {
+        return false;
+    }
+    $disabled = ini_get('disable_functions') ?: '';
+    $disabledList = array_map('trim', explode(',', $disabled));
+    return !in_array($name, $disabledList, true);
+}
+
 function pathAllowedByOpenBaseDir(string $path): bool {
     $restrictions = ini_get('open_basedir');
     if (!$restrictions) {
@@ -46,6 +55,28 @@ function pathAllowedByOpenBaseDir(string $path): bool {
         }
     }
     return false;
+}
+
+function readSystemFile(string $path): ?string {
+    if (pathAllowedByOpenBaseDir($path)) {
+        $content = @file_get_contents($path);
+        if ($content !== false) {
+            $trimmed = trim($content);
+            if ($trimmed !== '') {
+                return $trimmed;
+            }
+        }
+    }
+    if (functionAvailable('shell_exec')) {
+        $output = @shell_exec('cat ' . escapeshellarg($path) . ' 2>/dev/null');
+        if (is_string($output)) {
+            $trimmed = trim($output);
+            if ($trimmed !== '') {
+                return $trimmed;
+            }
+        }
+    }
+    return null;
 }
 
 function initSystemConfig(): void {
@@ -216,9 +247,31 @@ function verifyJWT(string $jwt) {
 
 function getSystemStatus(): array {
     $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0];
-    $cpu = isset($load[0]) ? round($load[0] * 100, 1) : 0;
-    $memoryUsage = round(memory_get_usage(true) / 1048576, 2);
-    $memoryPeak = round(memory_get_peak_usage(true) / 1048576, 2);
+    $cpuCores = getCpuCoreCount();
+    $cpu = '受限';
+    if ($cpuCores > 0 && isset($load[0])) {
+        $cpu = round(min(100, ($load[0] / max(1, $cpuCores)) * 100), 1);
+    }
+    $memoryUsage = '受限';
+    $memInfo = readSystemFile('/proc/meminfo');
+    if ($memInfo !== null) {
+        $memTotal = null;
+        $memAvailable = null;
+        foreach (explode("\n", $memInfo) as $line) {
+            if (strpos($line, 'MemTotal:') === 0) {
+                $memTotal = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+            } elseif (strpos($line, 'MemAvailable:') === 0) {
+                $memAvailable = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+            }
+            if ($memTotal !== null && $memAvailable !== null) {
+                break;
+            }
+        }
+        if ($memTotal !== null && $memAvailable !== null && $memTotal > 0) {
+            $usedKb = max(0, $memTotal - $memAvailable);
+            $memoryUsage = round($usedKb / 1024, 2); // MB
+        }
+    }
     $diskUsage = 0;
     if (function_exists('disk_free_space')) {
         $total = @disk_total_space('/');
@@ -230,7 +283,6 @@ function getSystemStatus(): array {
     return [
         'cpu_usage' => $cpu,
         'memory_usage' => $memoryUsage,
-        'memory_peak' => $memoryPeak,
         'disk_usage' => $diskUsage,
         'active_connections' => countActiveConnections(),
         'api_calls_today' => getAPICallsToday(),
@@ -288,23 +340,41 @@ function getErrorCountToday(): int {
 }
 
 function getUptime(): string {
-    $path = '/proc/uptime';
-    if (pathAllowedByOpenBaseDir($path)) {
-        $contents = @file_get_contents($path);
-        if ($contents !== false) {
-            $parts = explode(' ', trim($contents));
-            $secondsFloat = (float) ($parts[0] ?? 0);
-            $seconds = (int) floor($secondsFloat);
-            if ($seconds < 0) {
-                $seconds = 0;
-            }
-            $days = intdiv($seconds, 86400);
-            $hours = intdiv($seconds % 86400, 3600);
-            $minutes = intdiv($seconds % 3600, 60);
-            return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+    $contents = readSystemFile('/proc/uptime');
+    if ($contents !== null) {
+        $parts = explode(' ', $contents);
+        $secondsFloat = (float) ($parts[0] ?? 0);
+        $seconds = (int) floor($secondsFloat);
+        if ($seconds < 0) {
+            $seconds = 0;
         }
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
     }
     return '未知';
+}
+
+function getCpuCoreCount(): int {
+    static $count = null;
+    if ($count !== null) {
+        return $count;
+    }
+    if (functionAvailable('shell_exec')) {
+        $nproc = trim((string) @shell_exec('nproc 2>/dev/null'));
+        if (ctype_digit($nproc) && (int) $nproc > 0) {
+            return $count = (int) $nproc;
+        }
+    }
+    $cpuinfo = readSystemFile('/proc/cpuinfo');
+    if ($cpuinfo !== null) {
+        $matches = substr_count($cpuinfo, 'processor');
+        if ($matches > 0) {
+            return $count = $matches;
+        }
+    }
+    return $count = 1;
 }
 
 function autoBackup(): void {

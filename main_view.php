@@ -254,12 +254,18 @@
         <?php endif; ?>
         <?php if (isAdmin()): ?>
         <div class="system-row">
+            <?php
+                $cpuValue = $systemStatus['cpu_usage'] ?? '未知';
+                $cpuDisplay = is_numeric($cpuValue) ? round((float) $cpuValue, 1) . '%' : htmlspecialchars((string) $cpuValue);
+                $memoryValue = $systemStatus['memory_usage'] ?? '未知';
+                $memoryDisplay = is_numeric($memoryValue) ? round((float) $memoryValue, 2) . ' MB' : htmlspecialchars((string) $memoryValue);
+            ?>
             <div class="system-card">
-                <strong><?php echo round($systemStatus['cpu_usage'], 1); ?>%</strong>
+                <strong><?php echo $cpuDisplay; ?></strong>
                 <span>CPU 使用率</span>
             </div>
             <div class="system-card">
-                <strong><?php echo round($systemStatus['memory_usage'], 2); ?>MB</strong>
+                <strong><?php echo $memoryDisplay; ?></strong>
                 <span>内存占用</span>
             </div>
             <div class="system-card">
