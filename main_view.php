@@ -52,6 +52,7 @@
         .stat-card.stat-unused { background: linear-gradient(120deg,#66bb6a,#43a047); }
         .stat-card.stat-used { background: linear-gradient(120deg,#42a5f5,#1e88e5); }
         .stat-card.stat-disabled { background: linear-gradient(120deg,#9e9e9e,#616161); }
+        .stat-card.stat-expired { background: linear-gradient(120deg,#fda085,#f6d365); }
         .stat-card h3 { margin: 0 0 8px; font-size: 14px; color: rgba(255,255,255,0.85); }
         .stat-card.stat-total h3,
         .stat-card.stat-total p { color: #5d4037; }
@@ -265,6 +266,10 @@
             <div class="stat-card stat-disabled">
                 <h3>已禁用</h3>
                 <p><?php echo $disabledCount; ?></p>
+            </div>
+            <div class="stat-card stat-expired">
+                <h3>已到期</h3>
+                <p><?php echo $expiredCount; ?></p>
             </div>
         </div>
         <?php if (isAgent()): ?>

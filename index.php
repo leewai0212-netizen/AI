@@ -1850,6 +1850,12 @@ $totalCards = count($filteredCards);
 $unusedCount = count(array_filter($filteredCards, fn($c) => $c['status'] === 'unused'));
 $usedCount = count(array_filter($filteredCards, fn($c) => $c['status'] === 'used'));
 $disabledCount = count(array_filter($filteredCards, fn($c) => $c['disabled'] ?? false));
+$expiredCount = count(array_filter($filteredCards, function ($card) {
+    if (empty($card['expire_time'])) {
+        return false;
+    }
+    return strtotime($card['expire_time']) < time();
+}));
 
 $perPage = 50;
 $page = max(1, (int) ($_GET['page'] ?? 1));
