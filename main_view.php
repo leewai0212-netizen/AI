@@ -181,9 +181,6 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             cursor: pointer;
         }
-        .system-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 24px; }
-        .system-card { background: #fff; border-radius: 12px; padding: 16px; text-align: center; }
-        .system-card strong { display: block; font-size: 20px; margin-bottom: 6px; }
         .badge { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
         @media (max-width: 768px) {
             .actions button { margin-bottom: 4px; }
@@ -251,26 +248,6 @@
                     <?php endforeach; ?>
                 </div>
             </div>
-        <?php endif; ?>
-        <?php if (isAdmin()): ?>
-        <div class="system-row">
-            <div class="system-card">
-                <strong><?php echo $systemStatus['cpu_usage']; ?>%</strong>
-                <span>CPU 使用率</span>
-            </div>
-            <div class="system-card">
-                <strong><?php echo $systemStatus['memory_usage']; ?>MB</strong>
-                <span>内存占用</span>
-            </div>
-            <div class="system-card">
-                <strong><?php echo $systemStatus['active_connections']; ?></strong>
-                <span>在线设备</span>
-            </div>
-            <div class="system-card">
-                <strong><?php echo htmlspecialchars($systemStatus['uptime']); ?></strong>
-                <span>运行时间</span>
-            </div>
-        </div>
         <?php endif; ?>
         <?php if (!empty($appStatsDisplay)): ?>
         <div class="type-stats">
