@@ -188,6 +188,43 @@
         @media (max-width: 768px) {
             .actions button { margin-bottom: 4px; }
         }
+        .security-section {
+            margin-bottom: 24px;
+        }
+        .security-section h2 {
+            margin-bottom: 12px;
+            color: #4f46e5;
+        }
+        .security-section h3 {
+            margin-top: 24px;
+            color: #0f172a;
+        }
+        .security-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin: 16px 0 8px;
+        }
+        .security-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 10px 25px rgba(15,23,42,0.1);
+            border: 1px solid rgba(148,163,184,0.2);
+        }
+        .security-card h4 {
+            margin: 0 0 8px;
+            color: #5b21b6;
+        }
+        .security-card ul {
+            padding-left: 18px;
+            margin: 0;
+            color: #475569;
+        }
+        .security-section ul {
+            margin-left: 18px;
+            color: #4b5563;
+        }
     </style>
 </head>
 <body>
@@ -216,6 +253,7 @@
             <div class="tab" data-tab="agents">代理管理</div>
             <div class="tab" data-tab="api">API 文档</div>
         <?php endif; ?>
+        <div class="tab" data-tab="security">安全方案</div>
     </div>
     <div class="tab-content active" id="manage">
         <div class="stats">
@@ -647,6 +685,98 @@
 406 未登录
 407 设备被踢</pre>
             </div>
+        </div>
+    </div>
+    <div class="tab-content" id="security">
+        <div class="api-doc security-section">
+            <h2>卡密系统防破解方案</h2>
+            <p>整体策略 = <strong>多层防护 + 风控监控 + 运营协同</strong>，以下为核心模块。</p>
+            <h3>防护总览</h3>
+            <div class="security-grid">
+                <div class="security-card">
+                    <h4>客户端层</h4>
+                    <ul>
+                        <li>代码混淆 / 加壳、防调试、防 Hook</li>
+                        <li>动态下发关键配置，避免硬编码</li>
+                        <li>运行环境检测（Root / 越狱 / 模拟器）</li>
+                    </ul>
+                </div>
+                <div class="security-card">
+                    <h4>接口层</h4>
+                    <ul>
+                        <li>HTTPS + AppKey/AppSecret + 时间戳签名</li>
+                        <li>IP / 设备限频与黑白名单</li>
+                        <li>敏感字段（卡密、Secret）全程加密</li>
+                    </ul>
+                </div>
+                <div class="security-card">
+                    <h4>业务层</h4>
+                    <ul>
+                        <li>卡密绑定 app_id + agent_id + device_id</li>
+                        <li>积分 / 限额 / 审批流，避免滥发卡</li>
+                        <li>异常行为自动锁卡并通知管理员</li>
+                    </ul>
+                </div>
+                <div class="security-card">
+                    <h4>监控与运营</h4>
+                    <ul>
+                        <li>实时仪表盘、告警机器人</li>
+                        <li>审计日志（生成 / 调天数 / 回收）</li>
+                        <li>多渠道通知：钉钉、邮件、短信</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>接口与通信安全</h3>
+            <ul>
+                <li>所有请求走 HTTPS，并在服务端校验证书。</li>
+                <li>请求包含 <code>app_key + timestamp + nonce + signature</code>，nonce 在短时间内不得复用。</li>
+                <li>按 IP / 卡密 / 设备维度做限流，触发阈值立即阻断或要求验证码。</li>
+                <li>敏感配置、密钥存放在安全模块，定期轮换。</li>
+            </ul>
+
+            <h3>卡密与设备绑定</h3>
+            <ul>
+                <li>接口层校验卡密所属应用，非通用卡无法在其它应用登录。</li>
+                <li>同卡多端、频繁切换 IP 等行为会自动触发风控，必要时冻结。</li>
+                <li>试用接口记录设备指纹，同设备只能获取一次试用。</li>
+            </ul>
+
+            <h3>客户端防护（如自研客户端）</h3>
+            <ul>
+                <li>上架前进行混淆 / 加壳，提升逆向成本。</li>
+                <li>在启动或关键节点做完整性校验，发现篡改立即退出。</li>
+                <li>核心授权逻辑放在服务端，客户端只保存最小必要信息。</li>
+            </ul>
+
+            <h3>风控与运营策略</h3>
+            <ul>
+                <li>对代理设置每日、每月的生成/试用额度，超限进入审批或人工确认。</li>
+                <li>记录积分续费、调天数、批量删除等关键操作，建立审计链路。</li>
+                <li>提供回收站/撤销机制，减少误操作带来的损失。</li>
+            </ul>
+
+            <h3>监控与告警</h3>
+            <ul>
+                <li>仪表盘监控 API 成功率、登录趋势、异常 IP。</li>
+                <li>按严重程度设置多级告警，并支持钉钉/飞书/短信/邮件等渠道。</li>
+                <li>结合日志分析，快速定位“暴力破解/批量调用/脚本操作”等行为。</li>
+            </ul>
+
+            <h3>落地路径</h3>
+            <ol>
+                <li><strong>阶段 1：</strong>HTTPS + 签名 + 限流 + 审计。</li>
+                <li><strong>阶段 2：</strong>应用/设备绑定、风控策略、通知体系。</li>
+                <li><strong>阶段 3：</strong>客户端加固、外部反作弊、自动化报表。</li>
+                <li><strong>持续运营：</strong>定期复盘安全事件、更新密钥、培训代理。</li>
+            </ol>
+
+            <h3>FAQ</h3>
+            <ul>
+                <li><strong>如何确认卡密属于哪个应用？</strong> 使用 <code>?api=card_app</code> 接口或后台检索。</li>
+                <li><strong>如果误封代理怎么办？</strong> 通过审计日志核实，走“快速解封 + 复审”流程。</li>
+                <li><strong>如何避免抓包重复请求？</strong> 配合签名、限流和 nonce 校验即可有效阻断。</li>
+            </ul>
         </div>
     </div>
     <?php endif; ?>
