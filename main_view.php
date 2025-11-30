@@ -53,6 +53,7 @@
         .stat-card.stat-used { background: linear-gradient(120deg,#42a5f5,#1e88e5); }
         .stat-card.stat-disabled { background: linear-gradient(120deg,#9e9e9e,#616161); }
         .stat-card.stat-expired { background: linear-gradient(120deg,#fda085,#f6d365); }
+        .stat-card.stat-online { background: linear-gradient(120deg,#a18cd1,#fbc2eb); }
         .stat-card h3 { margin: 0 0 8px; font-size: 14px; color: rgba(255,255,255,0.85); }
         .stat-card.stat-total h3,
         .stat-card.stat-total p { color: #5d4037; }
@@ -272,11 +273,9 @@
                 <h3>已到期</h3>
                 <p><?php echo $expiredCount; ?></p>
             </div>
-        </div>
-        <div class="system-row">
-            <div class="system-card online">
-                <strong><?php echo $systemStatus['active_connections']; ?></strong>
-                <span>在线设备</span>
+            <div class="stat-card stat-online">
+                <h3>在线设备</h3>
+                <p><?php echo $systemStatus['active_connections'] ?? 0; ?></p>
             </div>
         </div>
         <?php if (isAgent()): ?>
