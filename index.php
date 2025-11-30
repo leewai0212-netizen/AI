@@ -62,6 +62,58 @@ function functionAvailable(string $name): bool {
     return !in_array($name, $disabledList, true);
 }
 
+function runCommand(string $command): ?string {
+    $handlers = [
+        'shell_exec' => function (string $cmd) {
+            return shell_exec($cmd . ' 2>/dev/null');
+        },
+        'exec' => function (string $cmd) {
+            $output = [];
+            exec($cmd . ' 2>/dev/null', $output);
+            return implode("\n", $output);
+        },
+        'passthru' => function (string $cmd) {
+            ob_start();
+            passthru($cmd . ' 2>/dev/null');
+            return ob_get_clean();
+        },
+        'system' => function (string $cmd) {
+            ob_start();
+            system($cmd . ' 2>/dev/null');
+            return ob_get_clean();
+        },
+        'proc_open' => function (string $cmd) {
+            $descriptor = [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']];
+            $process = proc_open($cmd, $descriptor, $pipes);
+            if (!is_resource($process)) {
+                return null;
+            }
+            fclose($pipes[0]);
+            $output = stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            proc_close($process);
+            return $output;
+        }
+    ];
+    foreach ($handlers as $name => $executor) {
+        if (!functionAvailable($name)) {
+            continue;
+        }
+        try {
+            $result = $executor($command);
+            if (is_string($result)) {
+                $trimmed = trim($result);
+                if ($trimmed !== '') {
+                    return $trimmed;
+                }
+            }
+        } catch (Throwable $e) {
+            continue;
+        }
+    }
+    return null;
+}
+
 function pathAllowedByOpenBaseDir(string $path): bool {
     $restrictions = ini_get('open_basedir');
     if (!$restrictions) {
@@ -90,30 +142,15 @@ function readSystemFile(string $path): ?string {
             }
         }
     }
-    if (functionAvailable('shell_exec')) {
-        $output = @shell_exec('cat ' . escapeshellarg($path) . ' 2>/dev/null');
-        if (is_string($output)) {
-            $trimmed = trim($output);
-            if ($trimmed !== '') {
-                return $trimmed;
-            }
-        }
+    $output = runCommand('cat ' . escapeshellarg($path));
+    if ($output !== null) {
+        return $output;
     }
     return null;
 }
 
 function readSystemCommand(string $command): ?string {
-    if (!functionAvailable('shell_exec')) {
-        return null;
-    }
-    $output = @shell_exec($command . ' 2>/dev/null');
-    if (is_string($output)) {
-        $trimmed = trim($output);
-        if ($trimmed !== '') {
-            return $trimmed;
-        }
-    }
-    return null;
+    return runCommand($command);
 }
 
 function initSystemConfig(): void {
@@ -425,6 +462,22 @@ function getUptime(): string {
     $uptimePretty = readSystemCommand('uptime -p');
     if ($uptimePretty !== null) {
         return str_replace('up ', '', $uptimePretty);
+    }
+    $bootTime = readSystemCommand('uptime -s');
+    if ($bootTime !== null) {
+        $timestamp = strtotime($bootTime);
+        if ($timestamp) {
+            return formatDurationSeconds(time() - $timestamp);
+        }
+    }
+    $whoBoot = readSystemCommand('who -b');
+    if ($whoBoot !== null) {
+        if (preg_match('/boot\s+([0-9\-: ]+)/', $whoBoot, $matches)) {
+            $timestamp = strtotime($matches[1]);
+            if ($timestamp) {
+                return formatDurationSeconds(time() - $timestamp);
+            }
+        }
     }
     $uptimeRaw = readSystemCommand('cat /proc/uptime');
     if ($uptimeRaw !== null) {
