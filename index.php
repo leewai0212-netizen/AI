@@ -726,6 +726,9 @@ function cardMatchesApp(array $card, string $requestedApp): bool {
     if ($cardApp === 'app_general') {
         return true;
     }
+    if ($requestedApp === '' || $requestedApp === 'app_general') {
+        return true;
+    }
     return $cardApp === $requestedApp;
 }
 
