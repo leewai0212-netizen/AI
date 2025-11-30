@@ -389,7 +389,8 @@ function countActiveConnections(): int {
             if (($device['status'] ?? 'online') === 'kicked') {
                 continue;
             }
-            $last = isset($device['last_heartbeat']) ? strtotime($device['last_heartbeat']) : 0;
+            $heartbeatSource = $device['last_heartbeat'] ?? ($device['login_time'] ?? null);
+            $last = $heartbeatSource ? strtotime($heartbeatSource) : 0;
             if ($last && (time() - $last) <= 300) {
                 $count++;
             }
@@ -690,17 +691,18 @@ function manageDevice(string $cardKey, string $deviceId, string $deviceInfo, int
         ]);
     }
 
+    $nowFormatted = date('Y-m-d H:i:s');
     if ($deviceIndex === null) {
         $onlineDevices[] = [
             'device_id' => $deviceId,
             'device_info' => $deviceInfo,
-            'login_time' => date('Y-m-d H:i:s'),
-            'last_heartbeat' => date('Y-m-d H:i:s'),
+            'login_time' => $nowFormatted,
+            'last_heartbeat' => null,
             'ip' => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
             'status' => 'online'
         ];
     } else {
-        $onlineDevices[$deviceIndex]['last_heartbeat'] = date('Y-m-d H:i:s');
+        $onlineDevices[$deviceIndex]['login_time'] = $nowFormatted;
         $onlineDevices[$deviceIndex]['device_info'] = $deviceInfo;
         $onlineDevices[$deviceIndex]['ip'] = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     }
@@ -1857,7 +1859,6 @@ $offset = ($page - 1) * $perPage;
 $visibleCards = array_slice($filteredCards, $offset, $perPage);
 
 $systemStatus = getSystemStatus();
-$statusOverrides = getStatusOverrides();
 $dynamicCardTypes = getCardTypesWithDynamicPoints();
 
 $appStats = [];
