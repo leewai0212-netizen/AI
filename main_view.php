@@ -210,6 +210,46 @@
         .system-card.memory { background: linear-gradient(135deg,#90f7ec,#32ccbc); }
         .system-card.online { background: linear-gradient(135deg,#a18cd1,#fbc2eb); }
         .system-card.uptime { background: linear-gradient(135deg,#fddb92,#d1fdff); color: #3a3a3a; }
+        .status-overrides {
+            margin-bottom: 24px;
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 6px 18px rgba(15,23,42,0.08);
+        }
+        .status-overrides h4 {
+            margin: 0 0 12px;
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .status-overrides form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px,1fr));
+            gap: 12px;
+        }
+        .status-overrides input {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #dcdcdc;
+            font-size: 13px;
+        }
+        .status-overrides button {
+            grid-column: 1 / -1;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: none;
+            background: linear-gradient(135deg,#4facfe,#00f2fe);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .status-overrides small {
+            display: block;
+            margin-top: 8px;
+            color: #6b7280;
+            font-size: 12px;
+        }
         .badge { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
         @media (max-width: 768px) {
             .actions button { margin-bottom: 4px; }
@@ -311,6 +351,19 @@
                 <strong><?php echo htmlspecialchars($systemStatus['uptime']); ?></strong>
                 <span>运行时间</span>
             </div>
+        </div>
+        <div class="status-overrides">
+            <h4>监控数值手动修正（留空则使用自动数据）</h4>
+            <form method="POST">
+                <input type="hidden" name="action" value="update_status_overrides">
+                <input type="text" name="override_cpu" placeholder="CPU 使用率，如 12%" value="<?php echo htmlspecialchars($statusOverrides['cpu_usage'] ?? ''); ?>">
+                <input type="text" name="override_memory" placeholder="内存占用，如 6 GB" value="<?php echo htmlspecialchars($statusOverrides['memory_usage'] ?? ''); ?>">
+                <input type="text" name="override_memory_limit" placeholder="内存上限，如 16 GB" value="<?php echo htmlspecialchars($statusOverrides['memory_limit'] ?? ''); ?>">
+                <input type="text" name="override_active" placeholder="在线设备，如 42" value="<?php echo htmlspecialchars($statusOverrides['active_connections'] ?? ''); ?>">
+                <input type="text" name="override_uptime" placeholder="运行时间，如 87天" value="<?php echo htmlspecialchars($statusOverrides['uptime'] ?? ''); ?>">
+                <button type="submit">保存显示</button>
+                <small>这组数值仅影响页面展示，不会改变真实的系统状态。</small>
+            </form>
         </div>
         <?php endif; ?>
         <?php if (!empty($appStatsDisplay)): ?>
