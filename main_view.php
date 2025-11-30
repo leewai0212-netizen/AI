@@ -202,8 +202,13 @@
             cursor: pointer;
         }
         .system-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 24px; }
-        .system-card { background: #fff; border-radius: 12px; padding: 16px; text-align: center; }
-        .system-card strong { display: block; font-size: 20px; margin-bottom: 6px; }
+        .system-card { border-radius: 14px; padding: 18px; text-align: center; color: #fff; box-shadow: 0 10px 25px rgba(15,23,42,0.12); }
+        .system-card span { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; opacity: 0.85; }
+        .system-card strong { display: block; font-size: 22px; margin-bottom: 6px; }
+        .system-card.cpu { background: linear-gradient(135deg,#ff9a9e,#f6416c); }
+        .system-card.memory { background: linear-gradient(135deg,#90f7ec,#32ccbc); }
+        .system-card.online { background: linear-gradient(135deg,#a18cd1,#fbc2eb); }
+        .system-card.uptime { background: linear-gradient(135deg,#fddb92,#d1fdff); color: #3a3a3a; }
         .badge { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.2); color: #fff; font-size: 12px; }
         @media (max-width: 768px) {
             .actions button { margin-bottom: 4px; }
@@ -289,19 +294,19 @@
                     $memoryDisplay = htmlspecialchars((string) $memoryValue);
                 }
             ?>
-            <div class="system-card">
+            <div class="system-card cpu">
                 <strong><?php echo $cpuDisplay; ?></strong>
                 <span>CPU 使用率</span>
             </div>
-            <div class="system-card">
+            <div class="system-card memory">
                 <strong><?php echo $memoryDisplay; ?></strong>
                 <span>内存占用</span>
             </div>
-            <div class="system-card">
+            <div class="system-card online">
                 <strong><?php echo $systemStatus['active_connections']; ?></strong>
                 <span>在线设备</span>
             </div>
-            <div class="system-card">
+            <div class="system-card uptime">
                 <strong><?php echo htmlspecialchars($systemStatus['uptime']); ?></strong>
                 <span>运行时间</span>
             </div>
