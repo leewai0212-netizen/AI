@@ -695,9 +695,10 @@ X-Signature: HMAC_SHA256(app_key + timestamp + nonce + body, app_secret)</pre>
     <input type="hidden" name="app_id" value="">
 </form>
 <script>
-    const appOptions = [...<?php echo json_encode(array_map(function ($app) {
+    const appOptions = <?php echo json_encode(array_map(function ($app) {
         return ['id' => $app['id'], 'name' => $app['name']];
-    }, $applications), JSON_UNESCAPED_UNICODE); ?>, {id: 'all', name: '通用(全部)'}];
+    }, $applications), JSON_UNESCAPED_UNICODE); ?> || [];
+    appOptions.push({id: 'all', name: '通用(全部)'});
     const appOptionsList = appOptions.map(opt => `${opt.id}: ${opt.name}`).join('\n');
     const tabs = document.querySelectorAll('.tab');
     const contents = document.querySelectorAll('.tab-content');
