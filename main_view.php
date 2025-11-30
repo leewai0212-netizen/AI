@@ -80,19 +80,39 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
+        table.cards-table {
+            min-width: 1200px;
+        }
+        .cards-table th {
+            padding: 14px 18px;
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+        }
+        .cards-table td {
+            white-space: nowrap;
+        }
+        .cards-table th.col-kami,
+        .cards-table td:nth-child(2) { min-width: 150px; }
+        .cards-table th.col-app,
+        .cards-table td:nth-child(9) { min-width: 120px; }
+        .cards-table th.col-notes,
+        .cards-table td:nth-child(13) { min-width: 180px; }
+        .cards-table th.col-actions,
+        .cards-table td.actions { min-width: 150px; }
         th.col-kami { background: linear-gradient(120deg,#ffb74d,#fb8c00); }
-        th.col-type { background: linear-gradient(120deg,#ab47bc,#8e24aa); }
-        th.col-status { background: linear-gradient(120deg,#26c6da,#00acc1); }
-        th.col-expire { background: linear-gradient(120deg,#ef5350,#e53935); }
-        th.col-multi { background: linear-gradient(120deg,#ff8a65,#f4511e); }
-        th.col-online { background: linear-gradient(120deg,#26a69a,#00897b); }
-        th.col-heartbeat { background: linear-gradient(120deg,#ec407a,#d81b60); }
-        th.col-app { background: linear-gradient(120deg,#7e57c2,#5e35b1); }
-        th.col-used { background: linear-gradient(120deg,#ffcc80,#ffa726); }
-        th.col-owner { background: linear-gradient(120deg,#64b5f6,#1e88e5); }
-        th.col-group { background: linear-gradient(120deg,#80cbc4,#26a69a); }
-        th.col-notes { background: linear-gradient(120deg,#cfd8dc,#90a4ae); }
-        th.col-actions { background: linear-gradient(120deg,#ffa726,#fb8c00); }
+        th.col-type { background: linear-gradient(120deg,#d66efd,#8e2de2); }
+        th.col-status { background: linear-gradient(120deg,#1dd1a1,#10ac84); }
+        th.col-expire { background: linear-gradient(120deg,#54a0ff,#2e86de); }
+        th.col-multi { background: linear-gradient(120deg,#ff9ff3,#f368e0); }
+        th.col-online { background: linear-gradient(120deg,#48dbfb,#00d2d3); }
+        th.col-heartbeat { background: linear-gradient(120deg,#ff7675,#ff6b6b); }
+        th.col-app { background: linear-gradient(120deg,#a29bfe,#6c5ce7); }
+        th.col-used { background: linear-gradient(120deg,#feca57,#ff9f1a); }
+        th.col-owner { background: linear-gradient(120deg,#82ccdd,#60a3bc); }
+        th.col-group { background: linear-gradient(120deg,#f8a5c2,#f78fb3); }
+        th.col-notes { background: linear-gradient(120deg,#cfd9df,#a6c0fe); }
+        th.col-actions { background: linear-gradient(120deg,#ffb8b8,#ff6b81); }
         tr:nth-child(even) td { background: #fafafa; }
         tr:hover td { background: #f0f4ff; }
         .trial-row td { background: #fffde7; font-style: italic; }
@@ -258,7 +278,16 @@
                 $cpuValue = $systemStatus['cpu_usage'] ?? '未知';
                 $cpuDisplay = is_numeric($cpuValue) ? round((float) $cpuValue, 1) . '%' : htmlspecialchars((string) $cpuValue);
                 $memoryValue = $systemStatus['memory_usage'] ?? '未知';
-                $memoryDisplay = is_numeric($memoryValue) ? round((float) $memoryValue, 2) . ' MB' : htmlspecialchars((string) $memoryValue);
+                $memoryLimitValue = $systemStatus['memory_limit'] ?? null;
+                if (is_numeric($memoryValue)) {
+                    if (is_numeric($memoryLimitValue) && (float) $memoryLimitValue > 0) {
+                        $memoryDisplay = round((float) $memoryValue, 2) . ' / ' . round((float) $memoryLimitValue, 2) . ' MB';
+                    } else {
+                        $memoryDisplay = round((float) $memoryValue, 2) . ' MB';
+                    }
+                } else {
+                    $memoryDisplay = htmlspecialchars((string) $memoryValue);
+                }
             ?>
             <div class="system-card">
                 <strong><?php echo $cpuDisplay; ?></strong>
@@ -350,7 +379,7 @@
             </div>
         </div>
         <div style="overflow-x:auto;">
-            <table>
+            <table class="cards-table">
                 <thead>
                     <tr>
                         <th style="width:40px;">

@@ -13,6 +13,11 @@ $cardPointsFile = __DIR__ . '/card_points_config.json';
 $trialSessionsFile = __DIR__ . '/trial_sessions.json';
 
 const DEVICE_TIMEOUT_SECONDS = 18000; // 5 hours
+define('RUNTIME_DIR', __DIR__ . '/runtime');
+if (!is_dir(RUNTIME_DIR)) {
+    mkdir(RUNTIME_DIR, 0755, true);
+}
+const APP_STATE_FILE = RUNTIME_DIR . '/app_state.json';
 
 function readJsonFile(string $path, $default = []) {
     if (!file_exists($path)) {
@@ -28,6 +33,24 @@ function readJsonFile(string $path, $default = []) {
 
 function writeJsonFile(string $path, $data): void {
     file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+}
+
+function getAppState(): array {
+    static $state = null;
+    if ($state !== null) {
+        return $state;
+    }
+    $state = readJsonFile(APP_STATE_FILE, []);
+    if (!isset($state['boot_time'])) {
+        $state['boot_time'] = time();
+        writeJsonFile(APP_STATE_FILE, $state);
+    }
+    return $state;
+}
+
+function getAppBootTime(): int {
+    $state = getAppState();
+    return (int) ($state['boot_time'] ?? time());
 }
 
 function functionAvailable(string $name): bool {
@@ -280,6 +303,7 @@ function getSystemStatus(): array {
     }
     $memoryUsage = null;
     $memInfo = readSystemFile('/proc/meminfo');
+    $memoryLimit = getMemoryLimitMb();
     if ($memInfo !== null) {
         $memTotal = null;
         $memAvailable = null;
@@ -327,14 +351,19 @@ function getSystemStatus(): array {
             $diskUsage = round((1 - ($free / $total)) * 100, 2);
         }
     }
+    $uptime = getUptime();
+    if ($uptime === '未知') {
+        $uptime = formatDurationSeconds(time() - getAppBootTime());
+    }
     return [
         'cpu_usage' => $cpu,
         'memory_usage' => $memoryUsage,
+        'memory_limit' => $memoryLimit,
         'disk_usage' => $diskUsage,
         'active_connections' => countActiveConnections(),
         'api_calls_today' => getAPICallsToday(),
         'error_count_today' => getErrorCountToday(),
-        'uptime' => getUptime()
+        'uptime' => $uptime
     ];
 }
 
@@ -442,12 +471,43 @@ function parseUptimeSeconds(string $raw): ?string {
     $secondsFloat = (float) ($parts[0] ?? 0);
     $seconds = (int) floor($secondsFloat);
     if ($seconds >= 0) {
-        $days = intdiv($seconds, 86400);
-        $hours = intdiv($seconds % 86400, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+        return formatDurationSeconds($seconds);
     }
     return null;
+}
+
+function formatDurationSeconds(int $seconds): string {
+    if ($seconds < 0) {
+        $seconds = 0;
+    }
+    $days = intdiv($seconds, 86400);
+    $hours = intdiv($seconds % 86400, 3600);
+    $minutes = intdiv($seconds % 3600, 60);
+    if ($days > 0) {
+        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
+    }
+    if ($hours > 0) {
+        return sprintf('%d小时 %d分钟', $hours, $minutes);
+    }
+    return sprintf('%d分钟', max(1, $minutes));
+}
+
+function getMemoryLimitMb(): ?float {
+    $raw = ini_get('memory_limit');
+    if ($raw === false || $raw === '' || $raw === '-1') {
+        return null;
+    }
+    $value = trim($raw);
+    $unit = strtolower(substr($value, -1));
+    $number = (float) $value;
+    if (in_array($unit, ['g', 'm', 'k'], true)) {
+        if ($unit === 'g') {
+            $number *= 1024;
+        } elseif ($unit === 'k') {
+            $number /= 1024;
+        }
+    }
+    return round($number, 2);
 }
 
 function autoBackup(): void {
