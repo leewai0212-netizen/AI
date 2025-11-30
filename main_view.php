@@ -81,24 +81,26 @@
             letter-spacing: 0.05em;
         }
         table.cards-table {
-            min-width: 1100px;
+            width: 100%;
+            table-layout: fixed;
         }
         .cards-table th {
-            padding: 12px 14px;
-            font-size: 12px;
-            letter-spacing: 0.05em;
+            padding: 10px 8px;
+            font-size: 11px;
+            letter-spacing: 0.04em;
+            white-space: normal;
+            word-break: break-word;
         }
         .cards-table td {
-            white-space: nowrap;
+            padding: 10px 8px;
+            white-space: normal;
+            word-break: break-word;
         }
-        .cards-table th.col-kami,
-        .cards-table td:nth-child(2) { min-width: 130px; }
-        .cards-table th.col-app,
-        .cards-table td:nth-child(9) { min-width: 110px; }
-        .cards-table th.col-notes,
-        .cards-table td:nth-child(13) { min-width: 160px; }
-        .cards-table th.col-actions,
-        .cards-table td.actions { min-width: 140px; }
+        .cards-table .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
         th.col-kami { background: linear-gradient(120deg,#ffb74d,#fb8c00); }
         th.col-type { background: linear-gradient(120deg,#d66efd,#8e2de2); }
         th.col-status { background: linear-gradient(120deg,#1dd1a1,#10ac84); }
