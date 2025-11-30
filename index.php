@@ -13,11 +13,6 @@ $cardPointsFile = __DIR__ . '/card_points_config.json';
 $trialSessionsFile = __DIR__ . '/trial_sessions.json';
 
 const DEVICE_TIMEOUT_SECONDS = 18000; // 5 hours
-define('RUNTIME_DIR', __DIR__ . '/runtime');
-if (!is_dir(RUNTIME_DIR)) {
-    mkdir(RUNTIME_DIR, 0755, true);
-}
-const APP_STATE_FILE = RUNTIME_DIR . '/app_state.json';
 
 function readJsonFile(string $path, $default = []) {
     if (!file_exists($path)) {
@@ -33,35 +28,6 @@ function readJsonFile(string $path, $default = []) {
 
 function writeJsonFile(string $path, $data): void {
     file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-}
-
-function getAppState(): array {
-    static $state = null;
-    if ($state !== null) {
-        return $state;
-    }
-    $state = readJsonFile(APP_STATE_FILE, []);
-    if (!isset($state['boot_time'])) {
-        $state['boot_time'] = time();
-        writeJsonFile(APP_STATE_FILE, $state);
-    }
-    return $state;
-}
-
-function getAppBootTime(): int {
-    $state = getAppState();
-    return (int) ($state['boot_time'] ?? time());
-}
-
-function getStatusOverrides(): array {
-    $config = getSystemConfig();
-    return $config['status_overrides'] ?? [];
-}
-
-function saveStatusOverrides(array $overrides): void {
-    $config = getSystemConfig();
-    $config['status_overrides'] = $overrides;
-    updateSystemConfig($config);
 }
 
 function functionAvailable(string $name): bool {
@@ -401,9 +367,6 @@ function getSystemStatus(): array {
         }
     }
     $uptime = getUptime();
-    if ($uptime === '未知') {
-        $uptime = formatDurationSeconds(time() - getAppBootTime());
-    }
     $status = [
         'cpu_usage' => $cpu,
         'memory_usage' => $memoryUsage,
@@ -414,12 +377,6 @@ function getSystemStatus(): array {
         'error_count_today' => getErrorCountToday(),
         'uptime' => $uptime
     ];
-    $overrides = getStatusOverrides();
-    foreach ($overrides as $key => $value) {
-        if ($value !== '' && $value !== null) {
-            $status[$key] = $value;
-        }
-    }
     return $status;
 }
 
@@ -548,39 +505,6 @@ function parseUptimeSeconds(string $raw): ?string {
     return null;
 }
 
-function formatDurationSeconds(int $seconds): string {
-    if ($seconds < 0) {
-        $seconds = 0;
-    }
-    $days = intdiv($seconds, 86400);
-    $hours = intdiv($seconds % 86400, 3600);
-    $minutes = intdiv($seconds % 3600, 60);
-    if ($days > 0) {
-        return sprintf('%d天 %d小时 %d分钟', $days, $hours, $minutes);
-    }
-    if ($hours > 0) {
-        return sprintf('%d小时 %d分钟', $hours, $minutes);
-    }
-    return sprintf('%d分钟', max(1, $minutes));
-}
-
-function getMemoryLimitMb(): ?float {
-    $raw = ini_get('memory_limit');
-    if ($raw === false || $raw === '' || $raw === '-1') {
-        return null;
-    }
-    $value = trim($raw);
-    $unit = strtolower(substr($value, -1));
-    $number = (float) $value;
-    if (in_array($unit, ['g', 'm', 'k'], true)) {
-        if ($unit === 'g') {
-            $number *= 1024;
-        } elseif ($unit === 'k') {
-            $number /= 1024;
-        }
-    }
-    return round($number, 2);
-}
 
 function autoBackup(): void {
     global $backupsDir, $dataFile, $devicesFile, $accountsFile, $logsFile;
@@ -1479,7 +1403,7 @@ if (($config['backup']['auto_backup'] ?? false)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login') {
     $action = $_POST['action'] ?? '';
 
-if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app', 'update_status_overrides'], true)) {
+if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app'], true)) {
         if (!isAdmin()) {
             $_SESSION['error'] = '权限不足';
             header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
@@ -1626,24 +1550,6 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 }
                 writeAccounts($accounts);
                 $_SESSION['message'] = '应用已删除';
-                break;
-            case 'update_status_overrides':
-                $redirectTab = 'manage';
-                $fields = [
-                    'cpu_usage' => trim($_POST['override_cpu'] ?? ''),
-                    'memory_usage' => trim($_POST['override_memory'] ?? ''),
-                    'memory_limit' => trim($_POST['override_memory_limit'] ?? ''),
-                    'uptime' => trim($_POST['override_uptime'] ?? ''),
-                    'active_connections' => trim($_POST['override_active'] ?? '')
-                ];
-                $clean = [];
-                foreach ($fields as $key => $value) {
-                    if ($value !== '') {
-                        $clean[$key] = $value;
-                    }
-                }
-                saveStatusOverrides($clean);
-                $_SESSION['message'] = '系统监控显示已更新';
                 break;
         }
         header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=' . $redirectTab);
@@ -1911,7 +1817,6 @@ $offset = ($page - 1) * $perPage;
 $visibleCards = array_slice($filteredCards, $offset, $perPage);
 
 $systemStatus = getSystemStatus();
-$statusOverrides = getStatusOverrides();
 $dynamicCardTypes = getCardTypesWithDynamicPoints();
 
 $appStats = [];
