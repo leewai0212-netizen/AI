@@ -291,44 +291,9 @@
         <?php endif; ?>
         <?php if (isAdmin()): ?>
         <div class="system-row">
-            <?php
-                $loadValue = $systemStatus['load_avg'] ?? '未知';
-                $loadDisplay = htmlspecialchars(is_array($loadValue) ? implode(' / ', $loadValue) : (string) $loadValue);
-                $cpuValue = $systemStatus['cpu_usage'] ?? '未知';
-                $cpuDisplay = is_numeric($cpuValue) ? round((float) $cpuValue, 1) . '%' : htmlspecialchars((string) $cpuValue);
-                $memoryValue = $systemStatus['memory_usage'] ?? '未知';
-                $memoryLimitValue = $systemStatus['memory_limit'] ?? null;
-                if (is_numeric($memoryValue)) {
-                    if (is_numeric($memoryLimitValue) && (float) $memoryLimitValue > 0) {
-                        $memoryDisplay = round((float) $memoryValue, 2) . ' / ' . round((float) $memoryLimitValue, 2) . ' MB';
-                    } else {
-                        $memoryDisplay = round((float) $memoryValue, 2) . ' MB';
-                    }
-                } else {
-                    $memoryDisplay = htmlspecialchars((string) $memoryValue);
-                }
-                $diskValue = $systemStatus['disk_usage'] ?? '未知';
-                $diskDisplay = is_numeric($diskValue) ? round((float) $diskValue, 1) . '%' : htmlspecialchars((string) $diskValue);
-            ?>
-            <div class="system-card load">
-                <strong><?php echo $loadDisplay; ?></strong>
-                <span>系统负载</span>
-            </div>
-            <div class="system-card cpu">
-                <strong><?php echo $cpuDisplay; ?></strong>
-                <span>CPU 使用率</span>
-            </div>
-            <div class="system-card memory">
-                <strong><?php echo $memoryDisplay; ?></strong>
-                <span>内存占用</span>
-            </div>
-            <div class="system-card disk">
-                <strong><?php echo $diskDisplay; ?></strong>
-                <span>当前磁盘</span>
-            </div>
-            <div class="system-card uptime">
-                <strong><?php echo htmlspecialchars($systemStatus['uptime']); ?></strong>
-                <span>运行时间</span>
+            <div class="system-card online">
+                <strong><?php echo $systemStatus['active_connections']; ?></strong>
+                <span>在线设备</span>
             </div>
         </div>
         <?php endif; ?>
