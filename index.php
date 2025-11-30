@@ -1324,7 +1324,7 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
             $count = max(1, min(200, (int) ($_POST['count'] ?? 1)));
             $length = max(6, min(32, (int) ($_POST['length'] ?? 16)));
             $type = $_POST['type'] ?? 'month';
-            $maxDevices = max(1, min(9999, (int) ($_POST['max_devices'] ?? 1)));
+            $maxDevices = max(1, min(999, (int) ($_POST['max_devices'] ?? 1)));
             $group = $_POST['group'] ?? 'normal';
             $notes = trim($_POST['notes'] ?? '');
             $isAgentUser = isAgent();
@@ -1443,7 +1443,7 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
         case 'update_max_devices':
             $index = $findCard();
             if ($index !== null && cardVisibleToCurrentUser($cards[$index])) {
-                $value = max(1, min(9999, (int) $extra));
+                $value = max(1, min(999, (int) $extra));
                 $cards[$index]['max_devices'] = $value;
                 $needsSave = true;
                 $_SESSION['message'] = '多开数量已更新';
