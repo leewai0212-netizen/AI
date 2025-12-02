@@ -8,3 +8,11 @@ __pycache__/
 
 # System
 .DS_Store
+
+# 爬虫输出文件
+*.json
+*.csv
+douyin_comments*.json
+douyin_comments*.csv
+comments.json
+comments.csv

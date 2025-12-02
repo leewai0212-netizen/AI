@@ -1,0 +1,5 @@
+requests>=2.31.0
+
+# 可选: Selenium版本需要的依赖
+# selenium>=4.15.0
+# webdriver-manager>=4.0.0
