@@ -500,6 +500,7 @@
                     <input type="text" name="app_name" placeholder="应用名称" required>
                     <input type="text" name="app_id" placeholder="应用ID（可留空自动生成）">
                     <input type="text" name="app_description" placeholder="备注">
+                    <input type="text" name="app_rc4_key" placeholder="RC4密钥（可留空自动生成）">
                 </div>
                 <button type="submit">➕ 新增应用</button>
             </form>
@@ -511,6 +512,7 @@
                             <th>ID</th>
                             <th>备注</th>
                             <th>在线/总卡密</th>
+                            <th>RC4密钥</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -523,7 +525,16 @@
                             <td><?php echo htmlspecialchars($app['id']); ?></td>
                             <td><?php echo htmlspecialchars($app['description'] ?? '-'); ?></td>
                             <td><?php echo ($stat['online'] ?? 0) . ' / ' . ($stat['cards'] ?? 0); ?></td>
+                            <td>
+                                <?php if (!empty($app['rc4_key'])): ?>
+                                    <code style="font-family:monospace;font-size:12px;"><?php echo htmlspecialchars($app['rc4_key']); ?></code>
+                                    <button type="button" onclick="copyKey('<?php echo htmlspecialchars($app['rc4_key'], ENT_QUOTES); ?>')">复制</button>
+                                <?php else: ?>
+                                    <span style="color:#999;">未配置</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="actions">
+                                <button onclick="resetAppKey('<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>')">重置密钥</button>
                                 <?php if (($app['id'] ?? '') !== 'app_general'): ?>
                                     <button class="danger" onclick="deleteApp('<?php echo htmlspecialchars($app['id'], ENT_QUOTES); ?>')">删除</button>
                                 <?php else: ?>
@@ -873,6 +884,14 @@
         const form = document.getElementById('appForm');
         if (!form) return;
         form.querySelector('input[name="action"]').value = 'delete_app';
+        form.querySelector('input[name="app_id"]').value = appId;
+        form.submit();
+    }
+    function resetAppKey(appId) {
+        if (!confirm('重置密钥后客户端需要更新，确定继续吗？')) return;
+        const form = document.getElementById('appForm');
+        if (!form) return;
+        form.querySelector('input[name="action"]').value = 'reset_app_key';
         form.querySelector('input[name="app_id"]').value = appId;
         form.submit();
     }

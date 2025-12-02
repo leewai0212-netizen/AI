@@ -30,6 +30,79 @@ function writeJsonFile(string $path, $data): void {
     file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
+function generateRc4Key(int $bytes = 16): string {
+    $bytes = max(8, min(64, $bytes));
+    return rtrim(strtr(base64_encode(random_bytes($bytes)), '+/', '-_'), '=');
+}
+
+function ensureAppRc4Key(array &$app): bool {
+    if (!isset($app['rc4_key']) || !is_string($app['rc4_key']) || $app['rc4_key'] === '') {
+        $app['rc4_key'] = generateRc4Key();
+        return true;
+    }
+    return false;
+}
+
+function rc4Cipher(string $key, string $data): string {
+    if ($key === '' || $data === '') {
+        return $data;
+    }
+    $keyLength = strlen($key);
+    $S = range(0, 255);
+    $j = 0;
+    for ($i = 0; $i < 256; $i++) {
+        $j = ($j + $S[$i] + ord($key[$i % $keyLength])) % 256;
+        $tmp = $S[$i];
+        $S[$i] = $S[$j];
+        $S[$j] = $tmp;
+    }
+    $i = 0;
+    $j = 0;
+    $result = '';
+    $dataLength = strlen($data);
+    for ($y = 0; $y < $dataLength; $y++) {
+        $i = ($i + 1) % 256;
+        $j = ($j + $S[$i]) % 256;
+        $tmp = $S[$i];
+        $S[$i] = $S[$j];
+        $S[$j] = $tmp;
+        $k = $S[($S[$i] + $S[$j]) % 256];
+        $result .= chr(ord($data[$y]) ^ $k);
+    }
+    return $result;
+}
+
+function attachEncryptedPayload(array $response, string $appId, array $applications): array {
+    if (($response['code'] ?? 0) !== 200) {
+        return $response;
+    }
+    if (!isset($response['data']) || !is_array($response['data'])) {
+        return $response;
+    }
+    $app = $applications[$appId] ?? null;
+    if (!$app) {
+        return $response;
+    }
+    $key = $app['rc4_key'] ?? '';
+    if ($key === '') {
+        return $response;
+    }
+    $json = json_encode($response['data'], JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        return $response;
+    }
+    $ciphertext = base64_encode(rc4Cipher($key, $json));
+    $response['encryption'] = [
+        'algorithm' => 'RC4',
+        'encoding' => 'base64',
+        'payload_format' => 'json',
+        'app_id' => $appId,
+        'ciphertext' => $ciphertext,
+        'key_hint' => substr(hash('sha256', $key), 0, 12)
+    ];
+    return $response;
+}
+
 function functionAvailable(string $name): bool {
     if (!function_exists($name)) {
         return false;
@@ -854,7 +927,8 @@ function createDefaultApplication(string $id = 'app_general', string $name = '�
     return [
         'id' => $id,
         'name' => $name,
-        'description' => $description
+        'description' => $description,
+        'rc4_key' => generateRc4Key()
     ];
 }
 
@@ -891,6 +965,9 @@ function readApplications(): array {
         }
         if (!isset($app['description'])) {
             $app['description'] = '';
+            $changed = true;
+        }
+        if (ensureAppRc4Key($app)) {
             $changed = true;
         }
         unset($app['app_key'], $app['app_secret'], $app['rate_limit_per_min']);
@@ -1116,6 +1193,7 @@ if (isset($_GET['api'])) {
     if (!isset($applicationsById[$requestedApp])) {
         $requestedApp = 'app_general';
     }
+    $encryptionAppId = $requestedApp;
 
     $cardByKey = [];
     foreach ($data as $card) {
@@ -1136,6 +1214,7 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$cardKey];
+            $encryptionAppId = $card['app_id'] ?? $requestedApp;
             if (($card['disabled'] ?? false)) {
                 $response = ['code' => 403, 'message' => '卡密已禁用'];
                 break;
@@ -1184,6 +1263,7 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$cardKey];
+            $encryptionAppId = $card['app_id'] ?? $requestedApp;
             if ($card['status'] === 'unused') {
                 foreach ($data as &$item) {
                     if ($item['card_key'] === $cardKey) {
@@ -1322,6 +1402,7 @@ if (isset($_GET['api'])) {
                 break;
             }
             $card = $cardByKey[$lookupKey];
+            $encryptionAppId = $card['app_id'] ?? $requestedApp;
             $appId = $card['app_id'] ?? 'app_general';
             $response = [
                 'code' => 200,
@@ -1356,6 +1437,7 @@ if (isset($_GET['api'])) {
             break;
     }
 
+    $response = attachEncryptedPayload($response, $encryptionAppId, $applicationsById);
     addLog('api_' . $action, $_SESSION['user_id'] ?? 'anonymous', [
         'ip' => $clientIP,
         'status_code' => $response['code'] ?? 0,
@@ -1502,7 +1584,7 @@ if (($config['backup']['auto_backup'] ?? false)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'login') {
     $action = $_POST['action'] ?? '';
 
-if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app'], true)) {
+if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points_config', 'add_app', 'delete_app', 'reset_app_key'], true)) {
         if (!isAdmin()) {
             $_SESSION['error'] = '权限不足';
             header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=agents');
@@ -1598,6 +1680,7 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 $name = trim($_POST['app_name'] ?? '');
                 $description = trim($_POST['app_description'] ?? '');
                 $appId = trim($_POST['app_id'] ?? '');
+            $rc4Key = trim($_POST['app_rc4_key'] ?? '');
                 if ($name === '') {
                     $_SESSION['error'] = '应用名称不能为空';
                     break;
@@ -1605,6 +1688,13 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 if ($appId === '') {
                     $appId = 'app_' . substr(bin2hex(random_bytes(6)), 0, 6);
                 }
+            if ($rc4Key !== '' && strlen($rc4Key) < 8) {
+                $_SESSION['error'] = 'RC4密钥长度至少 8 位';
+                break;
+            }
+            if ($rc4Key === '') {
+                $rc4Key = generateRc4Key();
+            }
                 foreach ($apps as $app) {
                     if (($app['id'] ?? '') === $appId) {
                         $_SESSION['error'] = '应用ID已存在';
@@ -1615,7 +1705,8 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 $apps[] = [
                     'id' => $appId,
                     'name' => $name,
-                    'description' => $description
+                'description' => $description,
+                'rc4_key' => $rc4Key
                 ];
                 writeApplications($apps);
                 $_SESSION['message'] = '应用已创建';
@@ -1649,6 +1740,30 @@ if (in_array($action, ['add_agent', 'edit_agent', 'delete_agent', 'update_points
                 }
                 writeAccounts($accounts);
                 $_SESSION['message'] = '应用已删除';
+                break;
+            case 'reset_app_key':
+                $redirectTab = 'apps';
+                $appId = $_POST['app_id'] ?? '';
+                if ($appId === '') {
+                    $_SESSION['error'] = '应用ID不能为空';
+                    break;
+                }
+                $apps = readApplications();
+                $updated = false;
+                foreach ($apps as &$app) {
+                    if (($app['id'] ?? '') === $appId) {
+                        $app['rc4_key'] = generateRc4Key();
+                        $updated = true;
+                        break;
+                    }
+                }
+                unset($app);
+                if ($updated) {
+                    writeApplications($apps);
+                    $_SESSION['message'] = 'RC4密钥已重置';
+                } else {
+                    $_SESSION['error'] = '应用不存在';
+                }
                 break;
         }
         header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=' . $redirectTab);
