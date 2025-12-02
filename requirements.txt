@@ -1,0 +1,13 @@
+# 抖音评论爬虫依赖包
+
+# Selenium - 浏览器自动化
+selenium>=4.15.0
+
+# Pandas - 数据处理和导出
+pandas>=2.1.0
+
+# openpyxl - Excel文件支持
+openpyxl>=3.1.0
+
+# webdriver-manager - 自动管理浏览器驱动（可选）
+webdriver-manager>=4.0.0
