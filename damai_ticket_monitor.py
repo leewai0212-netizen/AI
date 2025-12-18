@@ -40,7 +40,7 @@ DEFAULT_USER_AGENT = (
 # 文案/关键词（仅用于“提醒”，不自动点击）
 PURCHASABLE_KEYWORDS = ["立即", "购票", "购买", "选座", "去支付"]
 NOT_PURCHASABLE_KEYWORDS = ["缺货", "无票", "登记", "缺货登记", "提交缺货登记"]
-MOBILE_POPUP_KEYWORDS = ["移步手机端", "手机端购买", "不，立即购票", "不，立即预订"]
+MOBILE_POPUP_KEYWORDS = ["移步手机端", "手机端购买", "不，立即购票", "不，立即预订", "不，选座购票"]
 
 
 def now_ts() -> str:
