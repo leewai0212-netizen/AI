@@ -76,6 +76,16 @@ class DamaiTicketMonitor:
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
 
+            # 维持你原来的“指定 Chrome 安装目录”的方式：
+            # 注意：binary_location 必须指向 chrome.exe（不能只写文件夹）。
+            # 你给的路径是 D:\Chrome\App，因此这里按常见结构拼成 chrome.exe。
+            chrome_bin = r"D:\Chrome\App\chrome.exe"
+            if os.path.exists(chrome_bin):
+                options.binary_location = chrome_bin
+            else:
+                # 不阻塞：让 Selenium 继续尝试系统默认路径，但会打印提示
+                self._log(f"未找到 Chrome 程序: {chrome_bin}（将尝试系统默认安装路径）")
+
             # 更快进入可交互状态；减少长时间等待
             options.page_load_strategy = "eager"
 
