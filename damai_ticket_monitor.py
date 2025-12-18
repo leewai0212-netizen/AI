@@ -222,12 +222,14 @@ class DamaiTabMonitor:
         log_queue: "queue.Queue[str]",
         event_queue: "queue.Queue[dict]",
         stop_event: threading.Event,
+        pause_event: threading.Event,
         refresh_intervals: Dict[str, int],
     ):
         self.driver = driver
         self.log_queue = log_queue
         self.event_queue = event_queue
         self.stop_event = stop_event
+        self.pause_event = pause_event
         self.refresh_intervals = refresh_intervals
 
         self.tasks: List[MonitorTask] = []
@@ -335,6 +337,10 @@ class DamaiTabMonitor:
         self._log(f"开始轮询监控：任务数={len(self.tasks)}（同一浏览器多标签页，不重复登录）")
 
         while not self.stop_event.is_set():
+            # 暂停：保持浏览器停在当前 tab，不再刷新，等待 UI “继续监控”
+            while self.pause_event.is_set() and not self.stop_event.is_set():
+                time.sleep(0.1)
+
             attempt += 1
 
             # 动态间隔（严格按毫秒）
@@ -376,7 +382,13 @@ class DamaiTabMonitor:
 
                     popup_hit = self._scan_mobile_popup_text()
                     if popup_hit:
+                        # 关键优化：检测到弹窗提示 -> 立刻暂停并停留在该标签页
                         self._emit(type="popup_detected", task_index=idx, text=popup_hit, url=task.url)
+                        self._emit(type="paused", task_index=idx, reason=f"检测到提示/弹窗文本：{popup_hit}")
+                        self._log(f"已暂停监控：标签页#{idx} 检测到弹窗/提示文本：{popup_hit}（请手动处理后点“继续监控”）")
+                        self.pause_event.set()
+                        # 进入暂停等待；此时已停留在当前 tab
+                        continue
 
                     btn_text = self._get_buy_button_text()
                     if btn_text and btn_text != task.last_button_text:
@@ -428,6 +440,7 @@ class DamaiUI(ctk.CTk):
         self.event_queue: "queue.Queue[dict]" = queue.Queue()
 
         self.stop_event = threading.Event()
+        self.pause_event = threading.Event()
 
         self.chrome_binary_candidates = [
             r"D:\Chrome\App\chrome.exe",
@@ -520,6 +533,16 @@ class DamaiUI(ctk.CTk):
         self.start_btn = ctk.CTkButton(control, text="开始监控（复用浏览器）", command=self.start_monitoring, state="disabled")
         self.start_btn.grid(row=0, column=0, padx=10, pady=10)
 
+        self.resume_btn = ctk.CTkButton(
+            control,
+            text="继续监控",
+            command=self.resume_monitoring,
+            state="disabled",
+            fg_color="#2d6a4f",
+            hover_color="#1b4332",
+        )
+        self.resume_btn.grid(row=0, column=1, padx=10, pady=10)
+
         self.stop_btn = ctk.CTkButton(
             control,
             text="停止",
@@ -528,7 +551,7 @@ class DamaiUI(ctk.CTk):
             fg_color="red",
             hover_color="darkred",
         )
-        self.stop_btn.grid(row=0, column=1, padx=10, pady=10)
+        self.stop_btn.grid(row=0, column=2, padx=10, pady=10)
 
         self.status_label = ctk.CTkLabel(control, text="状态: 未开始", font=ctk.CTkFont(size=14, weight="bold"))
         self.status_label.grid(row=0, column=3, padx=10, pady=10, sticky="e")
@@ -678,31 +701,44 @@ class DamaiUI(ctk.CTk):
 
         # 停止旧监控
         self.stop_event.set()
+        self.pause_event.set()
         if self.monitor_thread and self.monitor_thread.is_alive():
             try:
                 self.monitor_thread.join(timeout=0.5)
             except Exception:
                 pass
         self.stop_event.clear()
+        self.pause_event.clear()
 
         self.monitor = DamaiTabMonitor(
             driver=self.login.driver,
             log_queue=self.log_queue,
             event_queue=self.event_queue,
             stop_event=self.stop_event,
+            pause_event=self.pause_event,
             refresh_intervals=refresh,
         )
         self.monitor.prepare_tabs(tasks)
 
         self.start_btn.configure(state="disabled")
+        self.resume_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
         self._set_status(f"监控中（任务数: {len(tasks)}）")
 
         self.monitor_thread = threading.Thread(target=self.monitor.run, daemon=True)
         self.monitor_thread.start()
 
+    def resume_monitoring(self) -> None:
+        """用户手动处理弹窗后，继续监控轮询"""
+        self.pause_event.clear()
+        self.resume_btn.configure(state="disabled")
+        if self.is_logged_in:
+            self._set_status("监控中（已继续）")
+        self._append_log(f"[{now_ts()}] 已继续监控")
+
     def stop_monitoring(self) -> None:
         self.stop_event.set()
+        self.pause_event.clear()
         self._set_status("正在停止...")
 
         def finalize():
@@ -712,6 +748,7 @@ class DamaiUI(ctk.CTk):
             else:
                 self.start_btn.configure(state="disabled")
             self.stop_btn.configure(state="disabled")
+            self.resume_btn.configure(state="disabled")
             self._append_log(f"[{now_ts()}] 已停止（浏览器不会自动关闭，避免重复登录）")
 
         self.after(100, finalize)
@@ -750,6 +787,10 @@ class DamaiUI(ctk.CTk):
                     )
                     self._append_alert(msg)
                     self.bell()
+                elif et == "paused":
+                    # 监控线程已暂停：启用“继续监控”按钮
+                    self._set_status("已暂停（请手动处理弹窗后点“继续监控”）")
+                    self.resume_btn.configure(state="normal")
         except queue.Empty:
             pass
 
