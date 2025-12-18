@@ -109,6 +109,34 @@ class DamaiLoginSession:
             self._log(f"启动浏览器失败：{str(e)[:160]}")
             return False
 
+    def attach_existing(self, debugger_address: str = "127.0.0.1:9222") -> bool:
+        """
+        绑定“已打开的 Chrome”：
+        需要你用下面方式启动 Chrome（否则无法绑定）：
+
+        chrome.exe --remote-debugging-port=9222 --user-data-dir="D:\\ChromeDebug"
+
+        说明：Selenium 无法无条件接管一个普通已打开的浏览器进程，必须开启远程调试端口。
+        """
+        try:
+            self._log(f"尝试绑定已有浏览器：{debugger_address}")
+            options = Options()
+            options.add_experimental_option("debuggerAddress", debugger_address)
+
+            # 不设置 binary_location：通过调试端口连接到现有进程
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=options)
+            self.driver.implicitly_wait(1)
+            self.wait = WebDriverWait(self.driver, 8, poll_frequency=0.25)
+
+            # 简单探测：能拿到句柄就认为绑定成功
+            _ = self.driver.current_url
+            self._log("绑定成功（已接管现有浏览器会话）")
+            return True
+        except Exception as e:
+            self._log(f"绑定失败：{str(e)[:160]}")
+            return False
+
     def open_login_page(self) -> bool:
         if not self.driver:
             if not self.setup_driver():
@@ -422,6 +450,15 @@ class DamaiUI(ctk.CTk):
         login_frame.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
         login_frame.grid_columnconfigure(4, weight=1)
 
+        ctk.CTkLabel(
+            login_frame,
+            text="(可选) 调试端口:",
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=2, padx=(10, 5), pady=10, sticky="e")
+        self.debugger_entry = ctk.CTkEntry(login_frame, width=160)
+        self.debugger_entry.insert(0, "127.0.0.1:9222")
+        self.debugger_entry.grid(row=0, column=3, padx=(0, 10), pady=10, sticky="w")
+
         self.open_login_btn = ctk.CTkButton(login_frame, text="1. 打开登录页", command=self.open_login_page)
         self.open_login_btn.grid(row=0, column=0, padx=10, pady=10)
 
@@ -593,6 +630,20 @@ class DamaiUI(ctk.CTk):
         self._set_login_status("验证中...")
 
         def run():
+            # 如果没有 driver，先尝试“绑定已有浏览器”
+            if not self.login.driver:
+                addr = (self.debugger_entry.get() or "").strip() if hasattr(self, "debugger_entry") else ""
+                addr = addr or "127.0.0.1:9222"
+                ok_attach = self.login.attach_existing(addr)
+                if not ok_attach:
+                    self.log_queue.put(
+                        f"[{now_ts()}] [登录] 绑定失败。你需要用调试模式启动Chrome，例如："
+                        f" chrome.exe --remote-debugging-port=9222 --user-data-dir=\"D:\\\\ChromeDebug\""
+                    )
+                    # 不自动打开登录页，避免你担心的频繁登录
+                    self.after(0, lambda: self._after_confirm_login(False))
+                    return
+
             ok = self.login.confirm_login()
             self.after(0, lambda: self._after_confirm_login(ok))
 
