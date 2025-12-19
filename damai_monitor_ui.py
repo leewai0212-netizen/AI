@@ -209,6 +209,7 @@ class DamaiTabMonitor:
         stop_event: threading.Event,
         pause_event: threading.Event,
         refresh_seconds: float,
+        pause_on_purchasable: bool = True,
     ):
         self.driver = driver
         self.log_queue = log_queue
@@ -216,6 +217,7 @@ class DamaiTabMonitor:
         self.stop_event = stop_event
         self.pause_event = pause_event
         self.refresh_seconds = refresh_seconds
+        self.pause_on_purchasable = pause_on_purchasable
         self.tasks: List[MonitorTask] = []
 
     def _log(self, msg: str) -> None:
@@ -331,6 +333,10 @@ class DamaiTabMonitor:
                             self.driver.switch_to.window(task.handle)
                         except Exception:
                             pass
+                        # 可选：发现可购买后暂停刷新，避免错过你手动点击
+                        if self.pause_on_purchasable:
+                            self._emit(type="paused", reason="检测到可购买，已自动暂停刷新", task_index=idx, url=task.url)
+                            self.pause_event.set()
 
                 except WebDriverException as e:
                     self._log(f"标签页#{idx} WebDriver异常：{str(e)[:120]}")
@@ -367,6 +373,7 @@ class DamaiUI(ctk.CTk):
 
         self.monitor: Optional[DamaiTabMonitor] = None
         self.monitor_thread: Optional[threading.Thread] = None
+        self.pause_on_purchasable_var = ctk.BooleanVar(value=True)
 
         self._build_widgets()
         self.after(30, self._poll_queues)
@@ -446,10 +453,19 @@ class DamaiUI(ctk.CTk):
         self.open_in_system_browser_btn = ctk.CTkButton(refresh, text="用系统浏览器打开首个链接", command=self.open_first_link)
         self.open_in_system_browser_btn.grid(row=1, column=2, padx=10, pady=6, sticky="w")
 
+        self.pause_on_purchasable_cb = ctk.CTkCheckBox(
+            refresh,
+            text="发现可购买后自动暂停刷新",
+            variable=self.pause_on_purchasable_var,
+        )
+        self.pause_on_purchasable_cb.grid(row=1, column=3, padx=10, pady=6, sticky="e")
+
         # ---- 控制区 ----
         control = ctk.CTkFrame(self)
         control.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
-        control.grid_columnconfigure(4, weight=1)
+        for i in range(7):
+            control.grid_columnconfigure(i, weight=0)
+        control.grid_columnconfigure(7, weight=1)
 
         self.start_btn = ctk.CTkButton(control, text="开始监控", command=self.start_monitoring, state="disabled")
         self.start_btn.grid(row=0, column=0, padx=10, pady=10)
@@ -463,8 +479,15 @@ class DamaiUI(ctk.CTk):
         self.stop_btn = ctk.CTkButton(control, text="停止", command=self.stop_monitoring, state="disabled", fg_color="red")
         self.stop_btn.grid(row=0, column=3, padx=10, pady=10)
 
+        ctk.CTkLabel(control, text="跳转到标签页#").grid(row=0, column=4, padx=(10, 4), pady=10, sticky="w")
+        self.focus_tab_entry = ctk.CTkEntry(control, width=80)
+        self.focus_tab_entry.insert(0, "1")
+        self.focus_tab_entry.grid(row=0, column=5, padx=(0, 6), pady=10, sticky="w")
+        self.focus_tab_btn = ctk.CTkButton(control, text="跳转", command=self.focus_tab, state="disabled")
+        self.focus_tab_btn.grid(row=0, column=6, padx=10, pady=10, sticky="w")
+
         self.status_label = ctk.CTkLabel(control, text="状态: 未开始", font=ctk.CTkFont(size=14, weight="bold"))
-        self.status_label.grid(row=0, column=4, padx=10, pady=10, sticky="e")
+        self.status_label.grid(row=0, column=7, padx=10, pady=10, sticky="e")
 
         # ---- 提醒区 ----
         alert = ctk.CTkFrame(self)
@@ -642,6 +665,7 @@ class DamaiUI(ctk.CTk):
             stop_event=self.stop_event,
             pause_event=self.pause_event,
             refresh_seconds=refresh_s,
+            pause_on_purchasable=bool(self.pause_on_purchasable_var.get()),
         )
         self.monitor.prepare_tabs(tasks)
 
@@ -649,6 +673,7 @@ class DamaiUI(ctk.CTk):
         self.pause_btn.configure(state="normal")
         self.resume_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
+        self.focus_tab_btn.configure(state="normal")
         self._set_status(f"监控中（{len(tasks)}个任务，{refresh_s:.2f}s刷新）")
 
         self.monitor_thread = threading.Thread(target=self.monitor.run, daemon=True, name="DamaiMonitor")
@@ -680,6 +705,7 @@ class DamaiUI(ctk.CTk):
             self.pause_btn.configure(state="disabled")
             self.resume_btn.configure(state="disabled")
             self.stop_btn.configure(state="disabled")
+            self.focus_tab_btn.configure(state="disabled")
             self._append_log(f"[{now_ts()}] 已停止监控（浏览器不会自动关闭）")
 
         self.after(0, finalize)
@@ -712,10 +738,28 @@ class DamaiUI(ctk.CTk):
                     for _ in range(3):
                         self.bell()
                         time.sleep(0.08)
+                elif evt.get("type") == "paused":
+                    reason = evt.get("reason") or "已暂停"
+                    self._set_status(f"已暂停（{reason}）")
+                    self.pause_btn.configure(state="disabled")
+                    self.resume_btn.configure(state="normal")
+                    self._append_log(f"[{now_ts()}] [提示] {reason}")
         except queue.Empty:
             pass
 
         self.after(60, self._poll_queues)
+
+    def focus_tab(self) -> None:
+        if not self.monitor:
+            self._append_log(f"[{now_ts()}] 监控未启动")
+            return
+        try:
+            idx = int((self.focus_tab_entry.get() or "").strip())
+        except ValueError:
+            self._append_log(f"[{now_ts()}] 标签页编号必须是整数")
+            return
+        self.monitor.focus_task_tab(idx)
+        self._append_log(f"[{now_ts()}] 已跳转到标签页#{idx}")
 
 
 if __name__ == "__main__":
